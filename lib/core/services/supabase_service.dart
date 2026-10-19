@@ -633,6 +633,34 @@ class SupabaseService {
         final rpcRes = await client.rpc('admin_get_all_users');
         if (rpcRes != null && rpcRes is List && rpcRes.isNotEmpty) {
           var list = List<Map<String, dynamic>>.from(rpcRes);
+
+          // Guarantee that module permissions, authorised numbers, and phone are never omitted
+          // if an older version of the RPC stored procedure is active on the Supabase project
+          try {
+            final profiles = await client.from('profiles').select('id, phone, has_warranty_access, has_track_bearing_access, authorised_numbers');
+            final Map<String, Map<String, dynamic>> profMap = {
+              for (final p in profiles) (p['id']?.toString() ?? ''): Map<String, dynamic>.from(p)
+            };
+            for (final u in list) {
+              final uid = u['id']?.toString() ?? '';
+              final p = profMap[uid];
+              if (p != null) {
+                u['has_warranty_access'] = p['has_warranty_access'] == true;
+                u['has_track_bearing_access'] = p['has_track_bearing_access'] == true;
+                if (p['authorised_numbers'] != null) {
+                  u['authorised_numbers'] = (p['authorised_numbers'] as List<dynamic>?)
+                      ?.map((e) => e.toString())
+                      .toList() ?? [];
+                }
+                if (p['phone'] != null && (u['phone'] == null || u['phone'] == '—' || u['phone'].toString().trim().isEmpty)) {
+                  u['phone'] = p['phone'];
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Notice: profiles merge in fetchUsersForRoleAssignment: $e');
+          }
+
           if (query != null && query.trim().isNotEmpty) {
             final q = query.trim().toLowerCase();
             list = list.where((u) {
@@ -676,6 +704,7 @@ class SupabaseService {
           'full_name': p['full_name'] ?? 'Operator',
           'company_name': p['company_name'] ?? '',
           'facility_code': p['facility_code'] ?? '',
+          'phone': p['phone'] ?? '—',
           'role': role,
           'is_approved': p['is_approved'] == true,
           'is_active': p['is_active'] != false,
@@ -817,30 +846,29 @@ class SupabaseService {
           'p_target_user_id': userId,
           'p_numbers': cleanNumbers,
         });
-        await _updateOfflineUserAuthorisedNumbers(
-          userId: userId,
-          email: email,
-          numbers: cleanNumbers,
-        );
-        return true;
       } catch (_) {}
 
-      // 2. Direct table update fallback
+      // 2. Direct table update guarantee: sync both authorised_numbers and phone
       try {
-        await client.from('profiles').update({
+        final primaryPhone = cleanNumbers.isNotEmpty ? cleanNumbers.first : null;
+        final updateMap = <String, dynamic>{
           'authorised_numbers': cleanNumbers,
           'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', userId);
-
-        await _updateOfflineUserAuthorisedNumbers(
-          userId: userId,
-          email: email,
-          numbers: cleanNumbers,
-        );
-        return true;
+        };
+        if (primaryPhone != null) {
+          updateMap['phone'] = primaryPhone;
+        }
+        await client.from('profiles').update(updateMap).eq('id', userId);
       } catch (e) {
         debugPrint('Notice: direct profiles authorised_numbers update: $e');
       }
+
+      await _updateOfflineUserAuthorisedNumbers(
+        userId: userId,
+        email: email,
+        numbers: cleanNumbers,
+      );
+      return true;
     }
 
     await _updateOfflineUserAuthorisedNumbers(

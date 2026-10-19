@@ -4,7 +4,7 @@
 - [x] Create clean project `pivot_bearings_app` without modifying legacy projects.
 - [x] Initialize Android, iOS, and Web platform targets.
 - [x] Integrate custom fonts: `neue-haas-light.otf` (Regular 400) and `neue-haas-roman.otf` (Medium 500).
-- [x] Enforce strict binary design tokens: `#ECECEC` (Background) and `#0065C1` (Primary).
+- [x] Enforce strict binary design tokens: `#ECECEC` (Background) and `#001F59` (Primary).
 - [x] Implement zero-elevation theme (`elevation: 0.0`) and curved-square geometry (12px–16px).
 - [x] Setup dependency inventory with verified versions (`mobile_scanner`, `qr_flutter`, `camera`, `image`, `supabase_flutter`, `intl`, `flutter_dotenv`).
 - [x] Build multi-language localization framework (English, Hindi, Gujarati).

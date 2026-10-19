@@ -49,6 +49,7 @@ class _BearingLifecycleInspectorDialogState extends State<BearingLifecycleInspec
 
     try {
       final data = await SupabaseService.fetchBearingFullLifecycleDetails(widget.bearingId);
+      if (!mounted) return;
       if (data != null) {
         setState(() {
           _lifecycleData = data;
@@ -56,6 +57,7 @@ class _BearingLifecycleInspectorDialogState extends State<BearingLifecycleInspec
         });
       } else {
         final localBearing = await BearingRepositoryImpl().getBearingById(widget.bearingId);
+        if (!mounted) return;
         if (localBearing != null) {
           setState(() {
             _lifecycleData = _generateRealLifecycle(localBearing);
@@ -69,6 +71,7 @@ class _BearingLifecycleInspectorDialogState extends State<BearingLifecycleInspec
         }
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load bearing lifecycle: $e';
         _isLoading = false;

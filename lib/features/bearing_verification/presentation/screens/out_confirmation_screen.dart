@@ -22,6 +22,7 @@ class OutConfirmationScreen extends StatefulWidget {
 
 class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   BearingModel? _bearing;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -35,6 +36,32 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
       setState(() {
         _bearing = b;
       });
+    }
+  }
+
+  Future<void> _confirmAndMarkOut() async {
+    if (_isProcessing) return; // Prevent duplicate clicks!
+    setState(() => _isProcessing = true);
+
+    try {
+      await BearingRepositoryImpl().markBearingOut(widget.bearingId);
+      if (!mounted) return;
+
+      Navigator.pushReplacementNamed(
+        context,
+        AppRoutes.outResult,
+        arguments: widget.bearingId,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to mark OUT: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -104,7 +131,7 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
                     ),
                     const SizedBox(height: AppDimensions.spaceSm),
                     const Text(
-                      'Confirming OUT will record the authoritative server removal timestamp, close the current operational cycle, and automatically capture an optical verification photo.',
+                      'Confirming OUT will record the authoritative server removal timestamp, close the current operational cycle, and mark this bearing as decommissioned. Instant, seamless checkout with zero camera delay.',
                       style: AppTypography.bodyMd,
                     ),
                     const SizedBox(height: AppDimensions.spaceSm),
@@ -118,21 +145,19 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
 
               const SizedBox(height: AppDimensions.spaceLg),
 
+              // Quick & Seamless 1-Tap OUT (No image capture asked, duplicate click protected)
               IndustrialButton.danger(
-                label: 'Confirm OUT & Capture Proof',
-                icon: Icons.photo_camera,
-                onPressed: () => Navigator.pushNamed(
-                  context,
-                  AppRoutes.outVerificationCapture,
-                  arguments: widget.bearingId,
-                ),
+                label: _isProcessing ? 'MARKING OUT...' : 'CONFIRM MARK BEARING OUT',
+                icon: Icons.logout,
+                isLoading: _isProcessing,
+                onPressed: _isProcessing ? null : _confirmAndMarkOut,
               ),
 
               const SizedBox(height: AppDimensions.spaceSm),
 
               IndustrialButton.secondary(
                 label: 'Cancel',
-                onPressed: () => Navigator.pop(context),
+                onPressed: _isProcessing ? null : () => Navigator.pop(context),
               ),
               const SizedBox(height: AppDimensions.spaceXl),
             ],

@@ -12,7 +12,7 @@ import '../../domain/services/warranty_calculator.dart';
 abstract class BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload);
   Future<BearingModel?> getBearingById(String id);
-  Future<BearingModel> markBearingIn(String id, {String? proofImageHash});
+  Future<BearingModel> markBearingIn(String id, {String? proofImageHash, String? notes});
   Future<BearingModel> markBearingOut(String id, {String? proofImageHash});
   Future<List<VerificationEvent>> getEventsForBearing(String bearingId);
   Future<List<BearingModel>> getAllBearings({
@@ -36,6 +36,11 @@ class BearingRepositoryImpl implements BearingRepository {
 
   static void registerInMemoryBearing(BearingModel bearing) {
     _inMemoryStore[bearing.id] = bearing;
+  }
+
+  static void resetInMemoryStore() {
+    _inMemoryStore.clear();
+    _eventsStore.clear();
   }
 
   /// Authoritative server-side verification using Supabase `verify_bearing_qr` RPC
@@ -421,7 +426,7 @@ class BearingRepositoryImpl implements BearingRepository {
   }
 
   @override
-  Future<BearingModel> markBearingIn(String id, {String? proofImageHash}) async {
+  Future<BearingModel> markBearingIn(String id, {String? proofImageHash, String? notes}) async {
     final cleanId = id.trim().toUpperCase();
     final prefs = await SharedPreferences.getInstance();
     final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$cleanId') == true ||
@@ -436,10 +441,18 @@ class BearingRepositoryImpl implements BearingRepository {
       try {
         await SupabaseService.confirmBearingIn(
           bearingId: cleanId,
-          notes: 'Marked IN via Pivot Bearings App',
+          notes: notes ?? 'Marked IN via Pivot Bearings App',
         );
         final fresh = await getBearingById(cleanId);
-        if (fresh != null) return fresh;
+        if (fresh != null) {
+          await QrManagementRepository.syncBearingStateChange(
+            bearingId: cleanId,
+            newState: 'CURRENTLY_IN',
+            inTimestamp: fresh.firstInDate,
+            expiryTimestamp: fresh.warrantyExpiryDate,
+          );
+          return fresh;
+        }
       } catch (e) {
         if (AppConfig.isProduction) {
           rethrow;
@@ -500,6 +513,14 @@ class BearingRepositoryImpl implements BearingRepository {
   @override
   Future<BearingModel> markBearingOut(String id, {String? proofImageHash}) async {
     final cleanId = id.trim().toUpperCase();
+    final existing = await getBearingById(cleanId);
+    if (existing == null) {
+      throw StateError('Bearing $cleanId not found in repository.');
+    }
+    if (existing.state == BearingLifecycleState.currentlyOut) {
+      throw StateError('Bearing $cleanId is already marked OUT and permanently decommissioned.');
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('pbi_bearing_permanently_out_$cleanId', true);
     await prefs.setString('pbi_track_state_$cleanId', 'FINAL_OUT');
@@ -512,7 +533,14 @@ class BearingRepositoryImpl implements BearingRepository {
           notes: 'Marked OUT via Pivot Bearings App',
         );
         final fresh = await getBearingById(cleanId);
-        if (fresh != null) return fresh;
+        if (fresh != null) {
+          await QrManagementRepository.syncBearingStateChange(
+            bearingId: cleanId,
+            newState: 'CURRENTLY_OUT',
+            outTimestamp: fresh.lastOutDate ?? DateTime.now(),
+          );
+          return fresh;
+        }
       } catch (e) {
         if (AppConfig.isProduction) {
           rethrow;
@@ -522,14 +550,6 @@ class BearingRepositoryImpl implements BearingRepository {
 
     if (AppConfig.isProduction) {
       throw StateError('Cannot perform OUT action in production without initialized Supabase backend.');
-    }
-
-    final existing = await getBearingById(cleanId);
-    if (existing == null) {
-      throw StateError('Bearing $cleanId not found in repository.');
-    }
-    if (existing.state == BearingLifecycleState.currentlyOut) {
-      throw StateError('Bearing $cleanId is already marked OUT and permanently decommissioned.');
     }
     final now = DateTime.now();
 

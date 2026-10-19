@@ -158,11 +158,20 @@ class AppRouter {
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
         }
-        final id = (settings.arguments as String?) ?? '';
+        String id = '';
+        String? notes;
+        if (settings.arguments is Map) {
+          final map = settings.arguments as Map;
+          id = map['bearingId']?.toString() ?? '';
+          notes = map['notes']?.toString();
+        } else if (settings.arguments is String) {
+          id = settings.arguments as String;
+        }
         return MaterialPageRoute(
           builder: (_) => VerificationEvidenceCaptureScreen(
             bearingId: id,
             imageType: 'IN_INSTALLATION',
+            notes: notes,
           ),
         );
 

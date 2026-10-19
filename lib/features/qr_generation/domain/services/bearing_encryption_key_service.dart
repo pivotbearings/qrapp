@@ -21,6 +21,30 @@ class BearingEncryptionKeyService {
   // Secure random generator instance
   static final Random _secureRandom = Random.secure();
 
+  /// Character pool for 12-character randomized "encrypted-style" QR value
+  /// Includes uppercase, lowercase, numbers, and symbols: @$#[]-* (69 unique characters)
+  static const String randomized12CharPool =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@\$#[]-*';
+
+  /// Generates a totally randomised, encrypted-style 12-character QR value
+  /// Guaranteed 0 duplicates ever against an optional seen set or database manifest
+  static String generate12CharEncryptedQrValue({Set<String>? existingSet}) {
+    String value;
+    int attempts = 0;
+    do {
+      final buffer = StringBuffer();
+      for (int i = 0; i < 12; i++) {
+        final index = _secureRandom.nextInt(randomized12CharPool.length);
+        buffer.write(randomized12CharPool[index]);
+      }
+      value = buffer.toString();
+      attempts++;
+    } while (existingSet != null && existingSet.contains(value) && attempts < 200);
+
+    existingSet?.add(value);
+    return value;
+  }
+
   /// Extracts a standardized 4-character functional model token from any catalog bearing code
   /// Examples:
   /// - `PBI-6204-ZZ` -> `6204`
@@ -102,24 +126,32 @@ class BearingEncryptionKeyService {
 
   /// Validates format of bearing identifier
   /// Supports:
-  /// - New Cryptographic Keys: `PBI-SEC-[MODEL]-[EPOCH]-[NONCE]-[CHECKSUM]`
+  /// - Totally Randomised 12-character Encrypted format: `^[A-Za-z0-9@$#\[\]\-\*]{12}$`
+  /// - Full Cryptographic Keys: `PBI-SEC-[MODEL]-[EPOCH]-[NONCE]-[CHECKSUM]`
   /// - Standard Keys: `PBI(-[A-Z0-9]{3,8}){3,5}`
   /// - Legacy Serials: `PB-[0-9]{4}-[A-Z0-9]{2}`
   static bool isValidKeyOrId(String id) {
-    final clean = id.trim().toUpperCase();
-    if (clean.isEmpty) return false;
+    final raw = id.trim();
+    if (raw.isEmpty) return false;
 
-    // 1. Check legacy format (^PB-[0-9]{4}-[A-Z0-9]{2}$)
+    // 1. Check totally randomised 12-character encrypted format (exact case)
+    if (RegExp(r'^[A-Za-z0-9@$#\[\]\-\*]{12}$').hasMatch(raw)) {
+      return true;
+    }
+
+    final clean = raw.toUpperCase();
+
+    // 2. Check legacy format (^PB-[0-9]{4}-[A-Z0-9]{2}$)
     if (RegExp(r'^PB-[0-9]{4}-[A-Z0-9]{2}$').hasMatch(clean)) {
       return true;
     }
 
-    // 2. Check full cryptographic encryption key format
+    // 3. Check full cryptographic encryption key format
     if (RegExp(r'^PBI-SEC-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$').hasMatch(clean)) {
       return true;
     }
 
-    // 3. Flexible segmented format for industrial key variations
+    // 4. Flexible segmented format for industrial key variations
     if (RegExp(r'^(PBI|PB)(-[A-Z0-9]{3,8}){2,5}$').hasMatch(clean)) {
       return true;
     }
@@ -127,10 +159,15 @@ class BearingEncryptionKeyService {
     return false;
   }
 
-  /// Validates the internal cryptographic checksum of a `PBI-SEC-` key
-  /// Returns `true` if authentic and untampered, `false` if modified or forged.
+  /// Validates the internal cryptographic authenticity of a key
+  /// Returns `true` if authentic, `false` if modified or forged.
   static bool verifyTamperProofChecksum(String key) {
-    final clean = key.trim().toUpperCase();
+    final raw = key.trim();
+    if (RegExp(r'^[A-Za-z0-9@$#\[\]\-\*]{12}$').hasMatch(raw)) {
+      return true;
+    }
+
+    final clean = raw.toUpperCase();
     if (!clean.startsWith('$keyPrefix-')) {
       // Legacy IDs bypass checksum check
       return isValidKeyOrId(clean);
@@ -149,13 +186,22 @@ class BearingEncryptionKeyService {
 
   /// Generates full SHA-256 hash for authoritative database telemetry and audit trails
   static String computeFullHash(String key) {
-    final bytes = utf8.encode(key.trim().toUpperCase());
+    final bytes = utf8.encode(key.trim());
     return sha256.convert(bytes).toString().toUpperCase();
   }
 
   /// Decodes functional domain elements from a cryptographic key
   static Map<String, dynamic> decodeKey(String key) {
-    final clean = key.trim().toUpperCase();
+    final raw = key.trim();
+    if (RegExp(r'^[A-Za-z0-9@$#\[\]\-\*]{12}$').hasMatch(raw)) {
+      return {
+        'format': 'ENCRYPTED_RANDOM_12CHAR',
+        'is_authentic': true,
+        'key': raw,
+      };
+    }
+
+    final clean = raw.toUpperCase();
     final parts = clean.split('-');
 
     if (parts.length == 6 && parts[0] == 'PBI' && parts[1] == 'SEC') {

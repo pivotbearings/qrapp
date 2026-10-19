@@ -1,14 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pivot_bearings_app/features/bearing_verification/data/models/bearing_model.dart';
 import 'package:pivot_bearings_app/features/bearing_verification/data/repositories/bearing_repository.dart';
 import 'package:pivot_bearings_app/features/bearing_verification/domain/models/qr_verification_result.dart';
 import 'package:pivot_bearings_app/features/qr_generation/domain/services/qr_generation_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('Customer QR Scanner & Authoritative Verification Tests', () {
     late BearingRepository repository;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      BearingRepositoryImpl.resetInMemoryStore();
       repository = BearingRepositoryImpl();
 
       BearingRepositoryImpl.registerInMemoryBearing(

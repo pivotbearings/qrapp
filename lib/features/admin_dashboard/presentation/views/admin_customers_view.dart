@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -18,6 +20,7 @@ import '../widgets/admin_view_header.dart';
 ///   1. Warranty Module (OFF by default for new users)
 ///   2. Track Your Bearing Module (OFF by default for new users)
 /// - Bearing Authentication remains permanently accessible to all registered users
+/// - Real-time sync across multiple admin displays and web sessions
 /// - Fully mobile responsive for compact and smaller Android displays
 class AdminCustomersView extends StatefulWidget {
   const AdminCustomersView({super.key});
@@ -31,6 +34,8 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
   List<Map<String, dynamic>> _customers = [];
   bool _isLoading = true;
   String? _errorMessage;
+  Timer? _refreshTimer;
+  RealtimeChannel? _profilesRealtimeChannel;
 
   // Track which user emails are currently expanded in the UI
   final Set<String> _expandedEmails = {};
@@ -53,10 +58,46 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
   void initState() {
     super.initState();
     _loadCustomers();
+    _setupRealtimeSync();
+  }
+
+  void _setupRealtimeSync() {
+    try {
+      if (SupabaseService.isInitialized) {
+        _profilesRealtimeChannel = SupabaseService.client
+            .channel('public_profiles_admin_customers_${DateTime.now().millisecondsSinceEpoch}')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'profiles',
+              callback: (payload) {
+                if (mounted) {
+                  _loadCustomers(silent: true);
+                }
+              },
+            )
+            .subscribe();
+      }
+    } catch (e) {
+      debugPrint('Realtime channel subscribe error: $e');
+    }
+
+    // Auto-sync every 4 seconds so Screen 2 immediately updates when Screen 1 toggles access or numbers
+    _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted && !_isLoading) {
+        _loadCustomers(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    if (_profilesRealtimeChannel != null) {
+      try {
+        SupabaseService.client.removeChannel(_profilesRealtimeChannel!);
+      } catch (_) {}
+    }
     _searchCtrl.dispose();
     for (final c in _newNumberControllers.values) {
       c.dispose();
@@ -64,11 +105,13 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
     super.dispose();
   }
 
-  Future<void> _loadCustomers() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _loadCustomers({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final res = await SupabaseService.fetchCustomerProfiles(
@@ -76,12 +119,35 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
       );
       if (mounted) {
         setState(() {
-          _customers = res;
+          if (silent && _customers.isNotEmpty) {
+            // Keep pending optimistic values for any user being actively modified
+            final Map<String, Map<String, dynamic>> resMap = {
+              for (final c in res) (c['id']?.toString() ?? ''): c
+            };
+            for (var i = 0; i < _customers.length; i++) {
+              final uid = _customers[i]['id']?.toString() ?? '';
+              if (_savingUserIds.contains(uid)) {
+                continue;
+              }
+              if (resMap.containsKey(uid)) {
+                _customers[i] = resMap[uid]!;
+              }
+            }
+            final existingIds = _customers.map((c) => c['id']?.toString() ?? '').toSet();
+            for (final c in res) {
+              final uid = c['id']?.toString() ?? '';
+              if (!existingIds.contains(uid)) {
+                _customers.add(c);
+              }
+            }
+          } else {
+            _customers = res;
+          }
           _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && !silent) {
         setState(() {
           _errorMessage = 'Failed to load user accounts: $e';
           _isLoading = false;

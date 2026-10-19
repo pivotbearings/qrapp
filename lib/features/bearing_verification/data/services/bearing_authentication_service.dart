@@ -41,7 +41,6 @@ class BearingAuthenticationService {
     final bearingId = _extractBearingId(cleanPayload);
     final prefs = await SharedPreferences.getInstance();
     final deviceId = await _getOrCreateDeviceId();
-    final isRepeatDeviceScan = prefs.getBool('$_deviceScannedPrefix$bearingId') ?? false;
 
     // Fast-path decommissioned check: if bearing marked out, refuse authentication
     final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$bearingId') == true ||
@@ -111,38 +110,30 @@ class BearingAuthenticationService {
           }
 
           final dbScanCount = (row['scan_count'] as num?)?.toInt() ?? 0;
-          final int totalScans;
-          final int prevScanCount;
+          final localCount = prefs.getInt('$_localScanCountPrefix$bearingId') ?? 0;
+          final prevScanCount = dbScanCount > 0 ? dbScanCount : localCount;
+          final totalScans = prevScanCount + 1;
           final nowIso = DateTime.now().toIso8601String();
 
-          if (isRepeatDeviceScan) {
-            // Same device scanning again: do NOT increase the scan count
-            totalScans = dbScanCount > 0 ? dbScanCount : (prefs.getInt('$_localScanCountPrefix$bearingId') ?? 1);
-            prevScanCount = totalScans > 0 ? totalScans - 1 : 0;
-          } else {
-            // First time this device is scanning: increment count
-            prevScanCount = dbScanCount;
-            totalScans = dbScanCount + 1;
-            await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
-            await prefs.setInt('$_localScanCountPrefix$bearingId', totalScans);
+          await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
+          await prefs.setInt('$_localScanCountPrefix$bearingId', totalScans);
 
-            // Increment scan_count in qr_codes
-            if (qrId != null) {
-              SupabaseService.client.from('qr_codes').update({
-                'scan_count': totalScans,
-                'last_scanned_at': nowIso,
-              }).eq('id', qrId).then((_) {}).catchError((_) {});
+          // Authoritatively increment scan_count in qr_codes
+          if (qrId != null) {
+            SupabaseService.client.from('qr_codes').update({
+              'scan_count': totalScans,
+              'last_scanned_at': nowIso,
+            }).eq('id', qrId).then((_) {}).catchError((_) {});
 
-              // Log telemetry into scan_records
-              SupabaseService.client.from('scan_records').insert({
-                'qr_code_id': qrId,
-                'scanned_payload': cleanPayload,
-                'is_valid': true,
-                'scanned_by': SupabaseService.currentUserId,
-                'device_info': deviceId,
-                'scan_timestamp': nowIso,
-              }).then((_) {}).catchError((_) {});
-            }
+            // Log telemetry into scan_records
+            SupabaseService.client.from('scan_records').insert({
+              'qr_code_id': qrId,
+              'scanned_payload': cleanPayload,
+              'is_valid': true,
+              'scanned_by': SupabaseService.currentUserId,
+              'device_info': deviceId,
+              'scan_timestamp': nowIso,
+            }).then((_) {}).catchError((_) {});
           }
 
           final batch = row['qr_batches'] as Map<String, dynamic>?;
@@ -206,6 +197,10 @@ class BearingAuthenticationService {
       if (uri != null && uri.pathSegments.isNotEmpty) {
         id = uri.pathSegments.last.split('?').first;
       }
+    }
+    // If it's a 12-char randomized token, preserve exact case
+    if (RegExp(r'^[A-Za-z0-9@$#\[\]\-\*]{12}$').hasMatch(id)) {
+      return id.trim();
     }
     return id.toUpperCase().trim();
   }
@@ -271,22 +266,12 @@ class BearingAuthenticationService {
 
     final countKey = '$_localScanCountPrefix$bearingId';
     final firstScanKey = '$_localFirstScanPrefix$bearingId';
-    final isRepeatDeviceScan = prefs.getBool('$_deviceScannedPrefix$bearingId') ?? false;
 
-    final int totalScans;
-    final int previousScans;
-
-    if (isRepeatDeviceScan) {
-      // Repeat scan from same device: do NOT increment count
-      totalScans = prefs.getInt(countKey) ?? 1;
-      previousScans = totalScans > 0 ? totalScans - 1 : 0;
-    } else {
-      // First scan on this device: increment count
-      previousScans = prefs.getInt(countKey) ?? 0;
-      totalScans = previousScans + 1;
-      await prefs.setInt(countKey, totalScans);
-      await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
-    }
+    // Increment count on every authentic scan
+    final previousScans = prefs.getInt(countKey) ?? 0;
+    final totalScans = previousScans + 1;
+    await prefs.setInt(countKey, totalScans);
+    await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
 
     DateTime firstScannedAt;
     final storedFirstScan = prefs.getString(firstScanKey);

@@ -54,6 +54,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   bool _cameraPermissionDenied = false;
   String? _lastScannedCode;
   final TextEditingController _manualInputController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
 
   static const Color _greenPrimary = Color(0xFF0D8A4E);
   static const Color _greenBackground = Color(0xFFE8F5E9);
@@ -110,6 +111,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     _laserAnimController.dispose();
     _scannerController?.dispose();
     _manualInputController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -151,7 +153,11 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     await _scannerController?.stop();
 
     try {
-      final result = await BearingTrackService.trackScan(payload);
+      final enteredNotes = _notesController.text.trim();
+      final result = await BearingTrackService.trackScan(
+        payload,
+        notes: enteredNotes.isNotEmpty ? enteredNotes : null,
+      );
       if (mounted) {
         setState(() {
           _trackResult = result;
@@ -456,6 +462,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
             ),
           ),
 
+          const SizedBox(height: AppDimensions.spaceMd),
           const SizedBox(height: AppDimensions.spaceMd),
 
           // Primary CTA: Scan Bearing QR Code
@@ -1099,6 +1106,8 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted, isSuccess: true),
                 _buildSpecRow('Status', 'Operating / In Use', isSuccess: true),
+                if (_notesController.text.trim().isNotEmpty)
+                  _buildSpecRow('Notes', _notesController.text.trim()),
               ],
             ),
           ),
@@ -1290,6 +1299,8 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   result.formattedUsageDuration.replaceAll('You used this bearing for ', '').replaceAll('.', ''),
                   isHighlighted: true,
                 ),
+                if (_notesController.text.trim().isNotEmpty)
+                  _buildSpecRow('Notes', _notesController.text.trim()),
               ],
             ),
           ),
@@ -1708,6 +1719,15 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         .replaceAll('You used this bearing for ', '')
         .replaceAll('.', '');
 
+    final auth = AuthController.instance;
+    final prefs = await SharedPreferences.getInstance();
+    final storedNotes = (result.notes != null && result.notes!.trim().isNotEmpty)
+        ? result.notes!.trim()
+        : (prefs.getString('pbi_bearing_notes_${result.bearingId}') ??
+            prefs.getString('pbi_bearing_notes_${result.rawPayload}') ??
+            '');
+    final notesLine = (storedNotes.isNotEmpty) ? '\n• *Notes:* $storedNotes' : '';
+
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1717,13 +1737,11 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 • *Bearing Out:* $outTimeFormatted
 • *Total Usage Duration:* $durationClean
 • *Completed Cycle:* Cycle #${result.cycleNumber} Closed
-• *Status:* Decommissioned / Bearing Out
+• *Status:* Decommissioned / Bearing Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Authorized Bearing Usage Telemetry
 '''.trim();
 
-    final auth = AuthController.instance;
-    final prefs = await SharedPreferences.getInstance();
     String? authNumber;
     if (auth.authorisedNumbers.isNotEmpty) {
       authNumber = auth.authorisedNumbers.first;

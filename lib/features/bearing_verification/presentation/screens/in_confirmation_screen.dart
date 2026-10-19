@@ -26,10 +26,18 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
   bool _isLoading = true;
   bool _isPermanentlyOut = false;
 
+  final TextEditingController _notesController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadBearing();
+  }
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBearing() async {
@@ -51,12 +59,21 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
     }
   }
 
-  void _confirmAndStartWarranty() {
+  void _confirmAndStartWarranty() async {
     if (_isPermanentlyOut) return;
+    final notes = _notesController.text.trim();
+    if (notes.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pbi_bearing_notes_${widget.bearingId}', notes);
+    }
+    if (!mounted) return;
     Navigator.pushNamed(
       context,
       AppRoutes.inVerificationCapture,
-      arguments: widget.bearingId,
+      arguments: {
+        'bearingId': widget.bearingId,
+        'notes': notes,
+      },
     );
   }
 
@@ -351,6 +368,47 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
                               ),
                             ),
                           ],
+                        ),
+
+                        const SizedBox(height: AppDimensions.spaceMd),
+
+                        // Optional Notes Field (Clean, Minimalistic Textarea)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                            border: Border.all(color: AppColors.border, width: 1.2),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 12),
+                                child: Icon(
+                                  Icons.notes_rounded,
+                                  color: AppColors.primary,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: _notesController,
+                                  maxLines: 3,
+                                  minLines: 1,
+                                  style: AppTypography.bodyMd.copyWith(color: Colors.black87),
+                                  decoration: InputDecoration(
+                                    hintText: 'Notes',
+                                    hintStyle: AppTypography.bodyMd.copyWith(color: Colors.black38),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
 
                         const SizedBox(height: AppDimensions.spaceLg),

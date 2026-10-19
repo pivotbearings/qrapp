@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/services/supabase_service.dart';
@@ -111,7 +111,7 @@ class QrManagementRepository {
 
       final validRecords = _inMemoryQrCodes.where((q) {
         final id = q['bearing_id']?.toString() ?? '';
-        return RegExp(r'^PB-[0-9]{4}-[A-Z0-9]{2}$').hasMatch(id);
+        return BearingEncryptionKeyService.isValidKeyOrId(id);
       }).toList();
 
       if (validRecords.isEmpty) return;
@@ -432,16 +432,7 @@ class QrManagementRepository {
       batchId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
     }
 
-    // 4. Generate unique serials adhering to database check constraint ^PB-[0-9]{4}-[A-Z0-9]{2}$
-    var modelDigits = modelNumber.replaceAll(RegExp(r'[^0-9]'), '');
-    if (modelDigits.length < 4) {
-      modelDigits = modelDigits.padRight(4, '0');
-    } else if (modelDigits.length > 4) {
-      modelDigits = modelDigits.substring(modelDigits.length - 4);
-    }
-
-    final rnd = Random();
-    const hexChars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    // 4. Generate totally randomised 12-character encrypted-style QR values (zero duplicates)
     final List<String> generatedIds = [];
     final List<Map<String, dynamic>> records = [];
     final Set<String> seen = {};
@@ -450,11 +441,9 @@ class QrManagementRepository {
       String serial;
       int attempts = 0;
       do {
-        final c1 = hexChars[rnd.nextInt(hexChars.length)];
-        final c2 = hexChars[rnd.nextInt(hexChars.length)];
-        serial = 'PB-$modelDigits-$c1$c2';
+        serial = BearingEncryptionKeyService.generate12CharEncryptedQrValue(existingSet: seen);
         attempts++;
-      } while ((seen.contains(serial) || _inMemoryQrCodes.any((x) => x['bearing_id'] == serial)) && attempts < 100);
+      } while (_inMemoryQrCodes.any((x) => x['bearing_id'] == serial) && attempts < 100);
 
       seen.add(serial);
       generatedIds.add(serial);
@@ -464,7 +453,7 @@ class QrManagementRepository {
         'batch_id': batchId,
         'model_number': modelNumber,
         'payload_value': serial,
-        'payload_hash': 'SHA-256: VALID',
+        'payload_hash': 'SHA-256: ${BearingEncryptionKeyService.computeFullHash(serial)}',
         'assigned_warranty_plan_id': planId,
         'current_lifecycle_state': 'NOT_ACTIVATED',
         'is_flagged': false,
@@ -485,7 +474,7 @@ class QrManagementRepository {
         'is_flagged': false,
         'flag_reason': null,
         'payload_value': serial,
-        'payload_hash': 'SHA-256: VALID',
+        'payload_hash': 'SHA-256: ${BearingEncryptionKeyService.computeFullHash(serial)}',
         'created_at': DateTime.now().toIso8601String(),
       };
       if (!_inMemoryQrCodes.any((q) => q['bearing_id'] == serial)) {
@@ -571,6 +560,64 @@ class QrManagementRepository {
     return _mockBatches();
   }
 
+  /// Fetches all QR values across the entire registry for single-column manifest export
+  Future<List<String>> fetchAllRegistryQrValues({String? customerId}) async {
+    await loadFromLocalStorage();
+    final List<String> allValues = [];
+    final Set<String> seen = {};
+
+    if (SupabaseService.isInitialized) {
+      try {
+        var query = SupabaseService.client
+            .from('qr_codes')
+            .select('bearing_id, payload_value');
+
+        if (customerId != null && customerId.isNotEmpty && customerId != 'ALL') {
+          final isUuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(customerId);
+          if (isUuid) {
+            query = query.eq('assigned_customer_id', customerId);
+          } else {
+            try {
+              final profile = await SupabaseService.client
+                  .from('profiles')
+                  .select('id')
+                  .eq('email', customerId)
+                  .maybeSingle();
+              if (profile != null && profile['id'] != null) {
+                query = query.eq('assigned_customer_id', profile['id']);
+              }
+            } catch (_) {}
+          }
+        }
+
+        final res = await query.order('created_at', ascending: false).limit(50000);
+        for (final row in res as List) {
+          final m = Map<String, dynamic>.from(row as Map);
+          final val = (m['payload_value'] ?? m['bearing_id'] ?? '').toString().trim();
+          if (val.isNotEmpty && !seen.contains(val)) {
+            seen.add(val);
+            allValues.add(val);
+          }
+        }
+        if (allValues.isNotEmpty) {
+          return allValues;
+        }
+      } catch (e) {
+        debugPrint('Supabase fetchAllRegistryQrValues error: $e');
+      }
+    }
+
+    // Fallback: in-memory local records
+    for (final item in _inMemoryQrCodes) {
+      final val = (item['payload_value'] ?? item['bearing_id'] ?? '').toString().trim();
+      if (val.isNotEmpty && !seen.contains(val)) {
+        seen.add(val);
+        allValues.add(val);
+      }
+    }
+    return allValues;
+  }
+
   /// Fetches real QR records with filtering, searching, and pagination
   Future<List<Map<String, dynamic>>> fetchQrCodes({
     String? batchCode,
@@ -597,7 +644,7 @@ class QrManagementRepository {
           flag_reason,
           created_at,
           assigned_customer_id,
-          qr_batches!inner (batch_code, plant_location),
+          qr_batches (batch_code, plant_location),
           warranty_plans (id, plan_code, title, duration_months)
         ''');
 
@@ -799,6 +846,174 @@ class QrManagementRepository {
     };
   }
 
+  /// Fetches a list of generated QR files/batches with generation timestamp,
+  /// total QR count, model type, and the list of raw single-column QR values.
+  Future<List<Map<String, dynamic>>> fetchGeneratedFilesManifest({
+    String? searchQuery,
+    String? customerId,
+  }) async {
+    await loadFromLocalStorage();
+
+    final Map<String, Map<String, dynamic>> batchFilesMap = {};
+
+    // 1. Check Supabase if connected
+    if (SupabaseService.isInitialized) {
+      try {
+        final res = await SupabaseService.client
+            .from('qr_batches')
+            .select('''
+              id,
+              batch_code,
+              plant_location,
+              lot_date,
+              total_quantity,
+              created_at,
+              status,
+              qr_codes (
+                bearing_id,
+                payload_value,
+                model_number,
+                created_at
+              )
+            ''')
+            .order('created_at', ascending: false);
+
+        for (final item in (res as List)) {
+          final m = Map<String, dynamic>.from(item as Map);
+          final code = m['batch_code']?.toString() ?? 'BATCH-ACTIVE';
+          final qrList = (m['qr_codes'] as List<dynamic>?) ?? [];
+          final qrValues = <String>[];
+          String model = 'PBI-6204-ZZ';
+          DateTime? batchTime;
+          if (m['created_at'] != null) {
+            batchTime = DateTime.tryParse(m['created_at'].toString());
+          }
+
+          for (final q in qrList) {
+            final qMap = Map<String, dynamic>.from(q as Map);
+            final val = (qMap['bearing_id'] ?? qMap['payload_value'])?.toString() ?? '';
+            if (val.isNotEmpty) qrValues.add(val);
+            if (qMap['model_number'] != null) model = qMap['model_number'].toString();
+            if (batchTime == null && qMap['created_at'] != null) {
+              batchTime = DateTime.tryParse(qMap['created_at'].toString());
+            }
+          }
+
+          batchFilesMap[code] = {
+            'id': m['id']?.toString() ?? code,
+            'batch_code': code,
+            'filename': 'QR_Batch_$code.csv',
+            'created_at': batchTime ?? DateTime.now(),
+            'total_quantity': qrValues.isNotEmpty ? qrValues.length : ((m['total_quantity'] as num?)?.toInt() ?? 0),
+            'model_number': model,
+            'plant_location': m['plant_location']?.toString() ?? 'Plant 02 — Chakan',
+            'status': m['status']?.toString() ?? 'ACTIVE',
+            'qr_values': qrValues,
+          };
+        }
+      } catch (e) {
+        debugPrint('fetchGeneratedFilesManifest Supabase fetch: $e');
+      }
+    }
+
+    // 2. Merge local in-memory / SharedPreferences batches and QR codes
+    for (final b in _inMemoryBatches) {
+      final code = b['batch_code']?.toString() ?? '';
+      if (code.isEmpty) continue;
+      DateTime? dt;
+      if (b['created_at'] != null) {
+        dt = DateTime.tryParse(b['created_at'].toString());
+      } else if (b['lot_date'] != null) {
+        dt = DateTime.tryParse(b['lot_date'].toString());
+      }
+
+      final existing = batchFilesMap[code];
+      final localQrs = _inMemoryQrCodes
+          .where((q) => q['batch_code']?.toString() == code)
+          .map((q) => (q['bearing_id'] ?? q['payload_value'])?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      final combinedQrs = {...(existing?['qr_values'] as List<String>? ?? []), ...localQrs}.toList();
+      String model = existing?['model_number'] ?? 'PBI-6204-ZZ';
+      final matchingQr = _inMemoryQrCodes.firstWhere(
+        (q) => q['batch_code']?.toString() == code,
+        orElse: () => {},
+      );
+      if (matchingQr['model_number'] != null) {
+        model = matchingQr['model_number'].toString();
+      }
+
+      batchFilesMap[code] = {
+        'id': existing?['id'] ?? b['id']?.toString() ?? code,
+        'batch_code': code,
+        'filename': 'QR_Batch_$code.csv',
+        'created_at': existing?['created_at'] ?? dt ?? DateTime.now(),
+        'total_quantity': combinedQrs.isNotEmpty ? combinedQrs.length : ((b['total_quantity'] as num?)?.toInt() ?? 0),
+        'model_number': model,
+        'plant_location': b['plant_location']?.toString() ?? 'Plant 02 — Chakan',
+        'status': b['status']?.toString() ?? 'ACTIVE',
+        'qr_values': combinedQrs,
+      };
+    }
+
+    // 3. Collect any orphan QR codes not attached to a known batch
+    final orphanQrs = _inMemoryQrCodes.where((q) {
+      final bCode = q['batch_code']?.toString() ?? '';
+      return bCode.isEmpty || !batchFilesMap.containsKey(bCode);
+    }).toList();
+
+    if (orphanQrs.isNotEmpty) {
+      final orphanValues = orphanQrs
+          .map((q) => (q['bearing_id'] ?? q['payload_value'])?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      const code = 'BATCH-ACTIVE';
+      if (batchFilesMap.containsKey(code)) {
+        final existingList = (batchFilesMap[code]!['qr_values'] as List<String>);
+        existingList.addAll(orphanValues.where((v) => !existingList.contains(v)));
+        batchFilesMap[code]!['total_quantity'] = existingList.length;
+      } else {
+        batchFilesMap[code] = {
+          'id': 'batch-active',
+          'batch_code': code,
+          'filename': 'QR_Batch_$code.csv',
+          'created_at': DateTime.now(),
+          'total_quantity': orphanValues.length,
+          'model_number': orphanQrs.first['model_number']?.toString() ?? 'PBI-6204-ZZ',
+          'plant_location': 'Plant 02 — Chakan',
+          'status': 'ACTIVE',
+          'qr_values': orphanValues,
+        };
+      }
+    }
+
+    // 4. Convert to list and sort strictly descending by generation date & time
+    final list = batchFilesMap.values.toList();
+    list.sort((a, b) {
+      final dtA = a['created_at'] as DateTime? ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final dtB = b['created_at'] as DateTime? ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final cmp = dtB.compareTo(dtA);
+      if (cmp != 0) return cmp;
+      return (a['batch_code']?.toString() ?? '').compareTo(b['batch_code']?.toString() ?? '');
+    });
+
+    // 5. Apply search filter if query is present
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.trim().toLowerCase();
+      return list.where((item) {
+        final batchCode = (item['batch_code']?.toString() ?? '').toLowerCase();
+        final model = (item['model_number']?.toString() ?? '').toLowerCase();
+        final values = (item['qr_values'] as List<String>?) ?? [];
+        return batchCode.contains(q) ||
+            model.contains(q) ||
+            values.any((v) => v.toLowerCase().contains(q));
+      }).toList();
+    }
+
+    return list;
+  }
+
   // --- Offline Mock Fallback Engines ---
 
   Future<Map<String, dynamic>> _mockGenerateBatch({
@@ -815,14 +1030,9 @@ class QrManagementRepository {
       String id;
       int attempts = 0;
       do {
-        id = BearingEncryptionKeyService.generateKey(
-          modelNumber: modelNumber,
-          batchCode: batchCode,
-          sequenceIndex: i + attempts,
-          warrantyMonths: 6,
-        );
+        id = BearingEncryptionKeyService.generate12CharEncryptedQrValue(existingSet: uniqueIds);
         attempts++;
-      } while (uniqueIds.contains(id) && attempts < 100);
+      } while (_inMemoryQrCodes.any((x) => x['bearing_id'] == id) && attempts < 100);
 
       uniqueIds.add(id);
       generatedIds.add(id);

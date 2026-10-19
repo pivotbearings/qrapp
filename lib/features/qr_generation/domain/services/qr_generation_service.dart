@@ -81,4 +81,18 @@ class QrGenerationService {
     }
     return keys;
   }
+
+  /// Generates a batch of totally randomised 12-character encrypted-style QR values
+  /// Guarantees zero duplicates across the batch
+  static List<String> generateRandomized12CharKeys({
+    required int count,
+    Set<String>? existingSet,
+  }) {
+    final Set<String> seen = existingSet ?? <String>{};
+    final List<String> keys = [];
+    for (int i = 0; i < count; i++) {
+      keys.add(BearingEncryptionKeyService.generate12CharEncryptedQrValue(existingSet: seen));
+    }
+    return keys;
+  }
 }

@@ -37,6 +37,9 @@ class AuthController extends ChangeNotifier {
   bool _isLoading = false;
   StreamSubscription<AuthState>? _authSubscription;
 
+  RealtimeChannel? _profileRealtimeChannel;
+  Timer? _profileHeartbeatTimer;
+
   // Getters
   AppRole get role => _role;
   bool get isAuthenticated => _isAuthenticated;
@@ -86,6 +89,7 @@ class AuthController extends ChangeNotifier {
           _isApproved = await _fetchApprovalFromSupabase(user.id);
           await _loadProfileMetadata(user.id);
           await _persistSession();
+          _startRealtimeProfileSync(user.id);
         } else {
           _resetToUnauthenticated();
         }
@@ -109,6 +113,7 @@ class AuthController extends ChangeNotifier {
             _isApproved = await _fetchApprovalFromSupabase(user.id);
             await _loadProfileMetadata(user.id);
             await _persistSession();
+            _startRealtimeProfileSync(user.id);
           } else {
             _resetToUnauthenticated();
             await _clearPersistedSession();
@@ -127,7 +132,46 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadProfileMetadata(String uid) async {
+  void _startRealtimeProfileSync(String uid) {
+    _profileHeartbeatTimer?.cancel();
+    // Heartbeat every 4 seconds to sync permission updates across sessions
+    _profileHeartbeatTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      if (!_isAuthenticated || _userId == null) return;
+      try {
+        await _loadProfileMetadata(_userId!, notifyIfChanged: true);
+      } catch (_) {}
+    });
+
+    if (SupabaseService.isInitialized) {
+      try {
+        _profileRealtimeChannel?.unsubscribe();
+        _profileRealtimeChannel = SupabaseService.client
+            .channel('user_profile_realtime_$uid')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'profiles',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'id',
+                value: uid,
+              ),
+              callback: (payload) async {
+                debugPrint('Realtime profile change received for user $uid');
+                await _loadProfileMetadata(uid, notifyIfChanged: true);
+                _role = await _fetchRoleFromSupabase(uid);
+                _isApproved = await _fetchApprovalFromSupabase(uid);
+                notifyListeners();
+              },
+            )
+            .subscribe();
+      } catch (e) {
+        debugPrint('Notice: realtime profile channel subscription: $e');
+      }
+    }
+  }
+
+  Future<void> _loadProfileMetadata(String uid, {bool notifyIfChanged = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final cleanEmail = _userEmail?.trim().toLowerCase();
 
@@ -148,33 +192,56 @@ class AuthController extends ChangeNotifier {
     try {
       final res = await SupabaseService.client
           .from('profiles')
-          .select('company_name, phone, full_name, facility_code, has_warranty_access, has_track_bearing_access, authorised_numbers')
+          .select('company_name, phone, full_name, facility_code, has_warranty_access, has_track_bearing_access, authorised_numbers, is_approved')
           .eq('id', uid)
           .maybeSingle();
       if (res != null) {
-        if (res['company_name']?.toString().isNotEmpty == true) {
+        bool changed = false;
+
+        if (res['company_name']?.toString().isNotEmpty == true && _userCompany != res['company_name'].toString()) {
           _userCompany = res['company_name'].toString();
+          changed = true;
         }
-        if (res['phone']?.toString().isNotEmpty == true) {
+        if (res['phone']?.toString().isNotEmpty == true && _userPhone != res['phone'].toString()) {
           _userPhone = res['phone'].toString();
+          changed = true;
         }
-        if (res['full_name']?.toString().isNotEmpty == true) {
+        if (res['full_name']?.toString().isNotEmpty == true && _userName != res['full_name'].toString()) {
           _userName = res['full_name'].toString();
+          changed = true;
         }
-        _hasWarrantyAccess = res['has_warranty_access'] == true;
-        _hasTrackBearingAccess = res['has_track_bearing_access'] == true;
+
+        final newWarranty = res['has_warranty_access'] == true;
+        final newTrack = res['has_track_bearing_access'] == true;
+        final newApproval = res['is_approved'] == true;
+
+        if (_hasWarrantyAccess != newWarranty || _hasTrackBearingAccess != newTrack || _isApproved != newApproval) {
+          _hasWarrantyAccess = newWarranty;
+          _hasTrackBearingAccess = newTrack;
+          _isApproved = newApproval;
+          changed = true;
+        }
 
         if (res['authorised_numbers'] is List) {
-          _authorisedNumbers = (res['authorised_numbers'] as List)
+          final newNumbers = (res['authorised_numbers'] as List)
               .map((e) => e.toString().trim())
               .where((s) => s.isNotEmpty)
               .toList();
+          if (!listEquals(_authorisedNumbers, newNumbers)) {
+            _authorisedNumbers = newNumbers;
+            changed = true;
+          }
         }
 
         if (cleanEmail != null && cleanEmail.isNotEmpty) {
           await prefs.setBool('offline_warranty_$cleanEmail', _hasWarrantyAccess);
           await prefs.setBool('offline_track_$cleanEmail', _hasTrackBearingAccess);
           await prefs.setStringList('offline_authorised_numbers_$cleanEmail', _authorisedNumbers);
+        }
+
+        if (changed && notifyIfChanged) {
+          await _persistSession();
+          notifyListeners();
         }
       }
     } catch (e) {
@@ -218,6 +285,10 @@ class AuthController extends ChangeNotifier {
   }
 
   void _resetToUnauthenticated() {
+    _profileRealtimeChannel?.unsubscribe();
+    _profileRealtimeChannel = null;
+    _profileHeartbeatTimer?.cancel();
+    _profileHeartbeatTimer = null;
     _isAuthenticated = false;
     _isApproved = false;
     _hasWarrantyAccess = false;

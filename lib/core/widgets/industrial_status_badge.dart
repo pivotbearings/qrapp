@@ -23,8 +23,21 @@ class IndustrialStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final upper = statusText.toUpperCase();
-    final bool danger = isDanger ?? (upper.contains('EXPIRED') || upper.contains('INVALID') || upper.contains('BLOCKED') || upper.contains('FAILED'));
-    final bool success = isSuccess ?? (upper.contains('ACTIVE') || upper.contains('VERIFIED') || upper.contains('GENUINE'));
+    final bool danger = isDanger ??
+        (upper.contains('EXPIRED') ||
+            upper.contains('INVALID') ||
+            upper.contains('BLOCKED') ||
+            upper.contains('FAILED') ||
+            upper.contains('OUT') ||
+            upper.contains('REMOVAL') ||
+            upper.contains('REMOVED'));
+    final bool success = isSuccess ??
+        (upper.contains('ACTIVE') ||
+            upper.contains('VERIFIED') ||
+            upper.contains('GENUINE') ||
+            upper.contains('CURRENTLY_IN') ||
+            upper == 'IN' ||
+            upper.contains('INSTALLATION'));
 
     Color bgColor;
     Color borderColor;

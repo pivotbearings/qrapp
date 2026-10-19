@@ -85,11 +85,14 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             constraints: const BoxConstraints(maxWidth: 580),
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final minH = (constraints.maxHeight.isFinite && constraints.maxHeight > AppDimensions.gutterMobile * 2)
+                    ? (constraints.maxHeight - (AppDimensions.gutterMobile * 2))
+                    : 0.0;
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(AppDimensions.gutterMobile),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - (AppDimensions.gutterMobile * 2),
+                      minHeight: minH,
                     ),
                     child: IntrinsicHeight(
                       child: Column(
@@ -382,30 +385,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'AUTHENTICATE BEARING',
-                      style: AppTypography.labelMd.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF1B5E20),
-                        letterSpacing: 0.5,
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Verify genuine Pivot bearing & check official scan counter',
-                      style: AppTypography.caption.copyWith(
-                        color: Colors.black87,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  'AUTHENTICATE BEARING',
+                  style: AppTypography.labelMd.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1B5E20),
+                    letterSpacing: 0.5,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),
@@ -455,30 +443,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'TRACK YOUR BEARING',
-                      style: AppTypography.labelMd.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.primary,
-                        letterSpacing: 0.5,
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Instant QR-only IN / OUT logging & usage duration tracking',
-                      style: AppTypography.caption.copyWith(
-                        color: Colors.black87,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  'TRACK YOUR BEARING',
+                  style: AppTypography.labelMd.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary,
+                    letterSpacing: 0.5,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),
@@ -528,30 +501,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'BEARING IN / OUT (WARRANTY)',
-                      style: AppTypography.labelMd.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.primary,
-                        letterSpacing: 0.5,
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Mark Bearing In & upload proof photo to activate official warranty',
-                      style: AppTypography.caption.copyWith(
-                        color: Colors.black87,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  'BEARING IN / OUT (WARRANTY)',
+                  style: AppTypography.labelMd.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary,
+                    letterSpacing: 0.5,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),
@@ -601,30 +559,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'WARRANTY CHECK & PRODUCTS',
-                      style: AppTypography.labelMd.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.primary,
-                        letterSpacing: 0.5,
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Check active warranties, expiry status & registered bearings',
-                      style: AppTypography.caption.copyWith(
-                        color: Colors.black87,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: Text(
+                  'WARRANTY CHECK & PRODUCTS',
+                  style: AppTypography.labelMd.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primary,
+                    letterSpacing: 0.5,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),

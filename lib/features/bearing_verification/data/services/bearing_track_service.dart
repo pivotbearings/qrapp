@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../domain/models/bearing_track_result.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
+import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 
 /// Pivot Bearings India - Bearing Tracking Service
 ///
@@ -19,7 +20,7 @@ class BearingTrackService {
   // 'FINAL_OUT' stored in state means permanently decommissioned - no more scans allowed
   static const String _finalOutState = 'FINAL_OUT';
 
-  static Future<BearingTrackResult> trackScan(String rawPayload) async {
+  static Future<BearingTrackResult> trackScan(String rawPayload, {String? notes}) async {
     final cleanPayload = rawPayload.trim();
     if (cleanPayload.isEmpty) {
       return BearingTrackResult.invalid(
@@ -33,12 +34,23 @@ class BearingTrackService {
       try {
         final dynamic res = await SupabaseService.client.rpc(
           'track_bearing_scan',
-          params: {'p_scanned_payload': cleanPayload},
+          params: {
+            'p_scanned_payload': cleanPayload,
+            'p_notes': notes,
+          },
         );
 
         if (res != null && res is Map) {
           final data = Map<String, dynamic>.from(res);
-          return BearingTrackResult.fromJson(data, rawPayload: cleanPayload);
+          final result = BearingTrackResult.fromJson(data, rawPayload: cleanPayload);
+          // Sync with local & admin QR registry
+          await QrManagementRepository.syncBearingStateChange(
+            bearingId: result.bearingId ?? _extractBearingId(cleanPayload),
+            newState: result.action == 'BEARING_IN' ? 'CURRENTLY_IN' : 'CURRENTLY_OUT',
+            inTimestamp: result.inTimestamp,
+            outTimestamp: result.outTimestamp,
+          );
+          return result;
         }
       } catch (e) {
         debugPrint('Supabase RPC track_bearing_scan failed, falling back to local engine: $e');
@@ -178,10 +190,19 @@ class BearingTrackService {
         try {
           await SupabaseService.client
               .from('qr_codes')
-              .update({'current_lifecycle_state': 'FINAL_OUT'})
+              .update({
+                'current_lifecycle_state': 'CURRENTLY_OUT',
+                'last_out_timestamp': now.toIso8601String(),
+                'updated_at': now.toIso8601String(),
+              })
               .or('bearing_id.eq.$bearingId,payload_value.eq.$cleanPayload');
         } catch (_) {}
       }
+      await QrManagementRepository.syncBearingStateChange(
+        bearingId: bearingId,
+        newState: 'CURRENTLY_OUT',
+        outTimestamp: now,
+      );
       await prefs.setString(
         historyKey,
         jsonEncode(history
@@ -213,6 +234,7 @@ class BearingTrackService {
         durationHours: hours,
         durationMinutes: minutes,
         message: 'Bearing Out recorded successfully.',
+        notes: prefs.getString('pbi_bearing_notes_$bearingId'),
         lifecycleHistory: history,
         rawPayload: cleanPayload,
       );
@@ -222,6 +244,45 @@ class BearingTrackService {
       // =======================================================================
       await prefs.setString(stateKey, 'IN');
       await prefs.setString(inTimeKey, now.toIso8601String());
+
+      if (SupabaseService.isInitialized) {
+        try {
+          final updatedRows = await SupabaseService.client
+              .from('qr_codes')
+              .update({
+                'current_lifecycle_state': 'CURRENTLY_IN',
+                'first_in_timestamp': now.toIso8601String(),
+                'last_in_timestamp': now.toIso8601String(),
+                'updated_at': now.toIso8601String(),
+              })
+              .or('bearing_id.eq.$bearingId,payload_value.eq.$cleanPayload')
+              .select('id');
+
+          if (updatedRows.isEmpty) {
+            // Upsert into qr_codes if not present so it shows up in admin QR registry immediately!
+            await SupabaseService.client.from('qr_codes').insert({
+              'bearing_id': bearingId,
+              'batch_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+              'assigned_warranty_plan_id': '22222222-2222-2222-2222-222222222222',
+              'model_number': model,
+              'payload_value': cleanPayload,
+              'payload_hash': 'SHA-256: VALID',
+              'current_lifecycle_state': 'CURRENTLY_IN',
+              'first_in_timestamp': now.toIso8601String(),
+              'last_in_timestamp': now.toIso8601String(),
+              'is_flagged': false,
+            });
+          }
+        } catch (e) {
+          debugPrint('Notice: localTrackScan BEARING_IN update qr_codes error: $e');
+        }
+      }
+
+      await QrManagementRepository.syncBearingStateChange(
+        bearingId: bearingId,
+        newState: 'CURRENTLY_IN',
+        inTimestamp: now,
+      );
 
       return BearingTrackResult(
         isValid: true,

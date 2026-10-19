@@ -118,9 +118,10 @@ class BearingAuthenticationResult {
       currentLifecycleState == 'CURRENTLY_OUT' ||
       currentLifecycleState == 'DECOMMISSIONED' ||
       errorCode == 'ALREADY_OUT';
-  bool get isFirstScan => !isAlreadyOut && isAuthentic && previousScanCount == 0;
-  bool get isSecondScan => !isAlreadyOut && isAuthentic && previousScanCount == 1;
-  bool get isThirdOrSubsequentScan => !isAlreadyOut && isAuthentic && previousScanCount >= 2;
+  bool get isFirstScan => !isAlreadyOut && isAuthentic && totalScanCount <= 1 && previousScanCount == 0;
+  bool get isSecondScan => !isAlreadyOut && isAuthentic && !isFirstScan && (totalScanCount == 2 || previousScanCount == 1);
+  bool get isThirdOrSubsequentScan => !isAlreadyOut && isAuthentic && (totalScanCount >= 3 || previousScanCount >= 2);
+  bool get isRepeatedScan => !isAlreadyOut && isAuthentic && !isFirstScan;
   bool get isInvalid => !isAlreadyOut && !isAuthentic;
 
   /// Prominent Headline

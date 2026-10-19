@@ -28,6 +28,7 @@ class _OutVerificationCaptureScreenState
   String _computedHash = '[PENDING TRIGGER]';
 
   Future<void> _captureAndProcessProof() async {
+    if (_isProcessing) return;
     setState(() => _isProcessing = true);
 
     // Simulate raw optical capture buffer (100x100 dummy bitmap)

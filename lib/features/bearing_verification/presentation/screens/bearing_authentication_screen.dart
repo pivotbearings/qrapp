@@ -64,9 +64,13 @@ class _BearingAuthenticationScreenState
   static const Color _redBorder = Color(0xFFC62828);
   static const Color _redTextDark = Color(0xFFB71C1C);
 
-  static const Color _amberPrimary = Color(0xFFE65100);
-  static const Color _amberBackground = Color(0xFFFFF3E0);
-  static const Color _amberBorder = Color(0xFFEF6C00);
+  // Slight Yellow theme for all repeat/subsequent scans (2nd, 3rd, 4th, etc.)
+  static const Color _yellowPrimary = Color(0xFFCA8A04);
+  static const Color _yellowBackground = Color(0xFFFEF9C3); // Clear slight yellow (Tailwind Yellow-100)
+  static const Color _yellowBackgroundSubtle = Color(0xFFFEFCE8); // Very soft pastel yellow-50
+  static const Color _yellowBorder = Color(0xFFEAB308); // Vibrant yellow border
+  static const Color _yellowTextDark = Color(0xFF713F12); // High-contrast warm dark yellow text
+  static const Color _yellowSubhead = Color(0xFF854D0E);
 
   @override
   void initState() {
@@ -905,42 +909,44 @@ class _BearingAuthenticationScreenState
   Widget _buildAuthenticResultView(BearingAuthenticationResult result) {
     final isFirst = result.isFirstScan;
     final isSecond = result.isSecondScan;
-    final isThirdPlus = result.isThirdOrSubsequentScan;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppDimensions.gutterMobile),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Prominent Green Success Card
+          // Dynamic Success/Alert Card (Green for 1st scan, Slight Yellow for repeat scans)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _greenBackground,
+              color: isFirst ? _greenBackground : _yellowBackground,
               borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-              border: Border.all(color: _greenBorder, width: 2.0),
+              border: Border.all(
+                color: isFirst ? _greenBorder : _yellowBorder,
+                width: 2.0,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: _greenPrimary.withAlpha(25),
-                  blurRadius: 10,
+                  color: (isFirst ? _greenPrimary : _yellowBorder).withAlpha(40),
+                  blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: Column(
               children: [
-                // Glowing Verified Shield Icon
+                // Verified or Warning Icon
                 Container(
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
-                    color: _greenPrimary,
+                    color: isFirst ? _greenPrimary : _yellowPrimary,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 3.0),
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Icon(
-                      Icons.check_circle_rounded,
+                      isFirst ? Icons.check_circle_rounded : Icons.history_toggle_off_rounded,
                       size: 44,
                       color: Colors.white,
                     ),
@@ -948,15 +954,15 @@ class _BearingAuthenticationScreenState
                 ),
                 const SizedBox(height: 14),
 
-                // Success Badge
+                // Success or Previously Scanned Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                   decoration: BoxDecoration(
-                    color: _greenPrimary,
+                    color: isFirst ? _greenPrimary : _yellowPrimary,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    'OFFICIALLY REGISTERED BEARING',
+                    isFirst ? 'OFFICIALLY REGISTERED BEARING • 1ST SCAN' : 'PREVIOUSLY SCANNED BEARING (${result.totalScanCount} SCANS)',
                     style: AppTypography.caption.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
@@ -967,13 +973,13 @@ class _BearingAuthenticationScreenState
                 ),
                 const SizedBox(height: 10),
 
-                // Condition 1, 2, 3 Headline: "Authentic Pivot Bearing"
+                // Headline
                 Text(
-                  'Authentic Pivot Bearing',
+                  isFirst ? 'Authentic Pivot Bearing' : 'Previously Scanned Bearing',
                   style: AppTypography.headlineSm.copyWith(
                     fontWeight: FontWeight.w900,
                     fontSize: 22,
-                    color: _greenTextDark,
+                    color: isFirst ? _greenTextDark : _yellowTextDark,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -981,9 +987,11 @@ class _BearingAuthenticationScreenState
 
                 // Subhead
                 Text(
-                  result.subHeadline,
+                  isFirst
+                      ? 'First Recorded Scan · Bearing Successfully Authenticated'
+                      : 'This QR code has been scanned ${result.totalScanCount} times before',
                   style: AppTypography.labelMd.copyWith(
-                    color: _greenPrimary,
+                    color: isFirst ? _greenPrimary : _yellowSubhead,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -999,7 +1007,7 @@ class _BearingAuthenticationScreenState
             _buildFirstScanBanner(result)
           else if (isSecond)
             _buildSecondScanBanner(result)
-          else if (isThirdPlus)
+          else
             _buildThirdPlusScanBanner(result),
 
           const SizedBox(height: AppDimensions.spaceMd),
@@ -1008,9 +1016,12 @@ class _BearingAuthenticationScreenState
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isFirst ? Colors.white : _yellowBackgroundSubtle,
               borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-              border: Border.all(color: AppColors.primary, width: 1.2),
+              border: Border.all(
+                color: isFirst ? AppColors.primary : _yellowBorder,
+                width: 1.2,
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1019,22 +1030,25 @@ class _BearingAuthenticationScreenState
                   'BEARING SPECIFICATIONS',
                   style: AppTypography.labelMd.copyWith(
                     fontWeight: FontWeight.w900,
-                    color: AppColors.primary,
+                    color: isFirst ? AppColors.primary : _yellowTextDark,
                     letterSpacing: 0.5,
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: AppColors.primary, width: 1.0),
+                    color: isFirst ? const Color(0xFFDCFCE7) : _yellowBackground,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isFirst ? const Color(0xFF16A34A) : _yellowBorder,
+                      width: 1.2,
+                    ),
                   ),
                   child: Text(
                     'Total Scans: ${result.totalScanCount}',
                     style: AppTypography.caption.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                      fontWeight: FontWeight.w900,
+                      color: isFirst ? const Color(0xFF15803D) : _yellowTextDark,
                     ),
                   ),
                 ),
@@ -1122,14 +1136,14 @@ class _BearingAuthenticationScreenState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _amberBackground,
+        color: _yellowBackground,
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        border: Border.all(color: _amberBorder, width: 1.5),
+        border: Border.all(color: _yellowBorder, width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.history_toggle_off_rounded, color: _amberPrimary, size: 28),
+          const Icon(Icons.history_toggle_off_rounded, color: _yellowPrimary, size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1139,12 +1153,12 @@ class _BearingAuthenticationScreenState
                   'Already Scanned Once',
                   style: AppTypography.labelMd.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: _amberPrimary,
+                    color: _yellowTextDark,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'This QR code has already been scanned once and that it belongs to an authentic bearing.',
+                  'This QR code has already been scanned once and belongs to an authentic bearing.',
                   style: AppTypography.bodySm.copyWith(
                     color: Colors.black87,
                     fontWeight: FontWeight.w600,
@@ -1154,7 +1168,7 @@ class _BearingAuthenticationScreenState
                 const SizedBox(height: 4),
                 Text(
                   'Total Previous Scans: 1 | Current Scan: #2',
-                  style: AppTypography.caption.copyWith(color: Colors.black54),
+                  style: AppTypography.caption.copyWith(color: _yellowSubhead, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -1169,24 +1183,24 @@ class _BearingAuthenticationScreenState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _amberBackground,
+        color: _yellowBackground,
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        border: Border.all(color: _amberBorder, width: 1.5),
+        border: Border.all(color: _yellowBorder, width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.pin_outlined, color: _amberPrimary, size: 28),
+          const Icon(Icons.pin_outlined, color: _yellowPrimary, size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Multiple Previous Scans Detected',
+                  'Multiple Previous Scans Detected (${result.totalScanCount} Total)',
                   style: AppTypography.labelMd.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: _amberPrimary,
+                    color: _yellowTextDark,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1198,13 +1212,10 @@ class _BearingAuthenticationScreenState
                     height: 1.35,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
-                  'Previous Scans: ${result.previousScanCount} • Total Recorded Scans: ${result.totalScanCount}. If purchased as a fresh sealed bearing, check with your authorized distributor.',
-                  style: AppTypography.caption.copyWith(
-                    color: Colors.black54,
-                    height: 1.3,
-                  ),
+                  'Total Scans: ${result.totalScanCount} | Previous Scans: ${result.previousScanCount}',
+                  style: AppTypography.caption.copyWith(color: _yellowSubhead, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -1213,6 +1224,7 @@ class _BearingAuthenticationScreenState
       ),
     );
   }
+
 
   /// Invalid Bearing Layout (Red Theme Warning)
   Widget _buildInvalidResultView(BearingAuthenticationResult result) {

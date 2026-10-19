@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -17,11 +18,13 @@ import '../../domain/services/verification_image_service.dart';
 class VerificationEvidenceCaptureScreen extends StatefulWidget {
   final String bearingId;
   final String imageType; // 'IN_INSTALLATION' or 'OUT_REMOVAL'
+  final String? notes;
 
   const VerificationEvidenceCaptureScreen({
     super.key,
     required this.bearingId,
     required this.imageType,
+    this.notes,
   });
 
   @override
@@ -110,8 +113,8 @@ class _VerificationEvidenceCaptureScreenState
     // Background: #ECECEC
     img.fill(image, color: img.ColorRgb8(236, 236, 236));
 
-    // Outer border: #0065C1
-    final primaryColor = img.ColorRgb8(0, 101, 193);
+    // Outer border: #001F59
+    final primaryColor = img.ColorRgb8(0, 31, 89);
     img.drawRect(image, x1: 16, y1: 16, x2: width - 16, y2: height - 16, color: primaryColor);
     img.drawRect(image, x1: 20, y1: 20, x2: width - 20, y2: height - 20, color: primaryColor);
 
@@ -183,12 +186,21 @@ class _VerificationEvidenceCaptureScreenState
 
       // 2. Execute state transition on both backend and local registry
       if (widget.imageType == 'IN_INSTALLATION') {
+        final notePayload = widget.notes?.trim().isNotEmpty == true
+            ? widget.notes!.trim()
+            : 'Verified proof: $proofHash';
+        if (widget.notes?.trim().isNotEmpty == true) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('pbi_bearing_notes_${widget.bearingId}', widget.notes!.trim());
+          } catch (_) {}
+        }
         try {
           if (SupabaseService.isInitialized) {
             await SupabaseService.confirmBearingIn(
               bearingId: widget.bearingId,
               verificationImageId: imageId,
-              notes: 'Verified proof: $proofHash',
+              notes: notePayload,
             );
           }
         } catch (_) {}
@@ -196,6 +208,7 @@ class _VerificationEvidenceCaptureScreenState
         await BearingRepositoryImpl().markBearingIn(
           widget.bearingId,
           proofImageHash: proofHash,
+          notes: notePayload,
         );
 
         if (!mounted) return;

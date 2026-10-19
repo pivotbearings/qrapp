@@ -247,6 +247,12 @@ class _OutResultScreenState extends State<OutResultScreen> {
     required String cycleSummary,
     required String warrantyStatusStr,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedNotes = prefs.getString('pbi_bearing_notes_${widget.bearingId}');
+    final notesLine = (storedNotes != null && storedNotes.trim().isNotEmpty)
+        ? '\n• *Notes:* ${storedNotes.trim()}'
+        : '';
+
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -256,13 +262,12 @@ class _OutResultScreenState extends State<OutResultScreen> {
 • *Bearing Out:* $outDateStr
 • *Total Duration:* $cycleSummary
 • *Warranty:* $warrantyStatusStr
-• *Status:* Decommissioned / Final Out
+• *Status:* Decommissioned / Final Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Warranty Telemetry Record
 '''.trim();
 
     final auth = AuthController.instance;
-    final prefs = await SharedPreferences.getInstance();
     String? authNumber;
     if (auth.authorisedNumbers.isNotEmpty) {
       authNumber = auth.authorisedNumbers.first;

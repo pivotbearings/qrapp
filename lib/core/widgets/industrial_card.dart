@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_dimensions.dart';
 
-/// Industrial Card strictly in #ECECEC with 1.5px #0065C1 outline and ZERO shadows
+/// Industrial Card strictly in #ECECEC with 1.5px #001F59 outline and ZERO shadows
 class IndustrialCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;

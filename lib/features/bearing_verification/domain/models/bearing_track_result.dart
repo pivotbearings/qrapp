@@ -66,6 +66,7 @@ class BearingTrackResult {
   final int durationHours;
   final int durationMinutes;
   final String? message;
+  final String? notes;
   final List<BearingCycleRecord> lifecycleHistory;
   final String? rawPayload;
 
@@ -84,6 +85,7 @@ class BearingTrackResult {
     this.durationHours = 0,
     this.durationMinutes = 0,
     this.message,
+    this.notes,
     this.lifecycleHistory = const [],
     this.rawPayload,
   });
@@ -124,6 +126,7 @@ class BearingTrackResult {
       durationHours: durHours,
       durationMinutes: durMinutes,
       message: json['message']?.toString(),
+      notes: json['notes']?.toString(),
       lifecycleHistory: historyList,
       rawPayload: rawPayload,
     );

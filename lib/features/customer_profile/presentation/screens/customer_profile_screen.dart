@@ -322,14 +322,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                         icon: Icons.admin_panel_settings,
                         onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
                       ),
-                      const SizedBox(height: AppDimensions.spaceSm),
-                    ] else ...[
-                      IndustrialButton.secondary(
-                        label: 'SIGN IN AS ADMINISTRATOR',
-                        icon: Icons.admin_panel_settings_outlined,
-                        onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
-                      ),
-                      const SizedBox(height: AppDimensions.spaceSm),
                     ],
 
                     IndustrialButton.danger(
