@@ -41,7 +41,7 @@ dependencies:
   camera: ^0.12.1
   image: ^4.10.1
   supabase_flutter: ^2.18.2
-  intl: 0.20.2
+  intl: any
   flutter_dotenv: ^6.0.1
   crypto: ^3.0.7
   google_fonts: ^8.2.1
