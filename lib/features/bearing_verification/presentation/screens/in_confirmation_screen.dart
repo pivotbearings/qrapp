@@ -373,41 +373,34 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
                         const SizedBox(height: AppDimensions.spaceMd),
 
                         // Optional Notes Field (Clean, Minimalistic Textarea)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-                            border: Border.all(color: AppColors.border, width: 1.2),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.only(top: 12),
-                                child: Icon(
-                                  Icons.notes_rounded,
-                                  color: AppColors.primary,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: TextField(
-                                  controller: _notesController,
-                                  maxLines: 3,
-                                  minLines: 1,
-                                  style: AppTypography.bodyMd.copyWith(color: Colors.black87),
-                                  decoration: InputDecoration(
-                                    hintText: 'Notes',
-                                    hintStyle: AppTypography.bodyMd.copyWith(color: Colors.black38),
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ),
-                            ],
+                        TextFormField(
+                          controller: _notesController,
+                          maxLines: 3,
+                          minLines: 1,
+                          style: AppTypography.bodyMd.copyWith(color: Colors.black87),
+                          decoration: InputDecoration(
+                            hintText: 'Notes (Optional)',
+                            hintStyle: AppTypography.bodyMd.copyWith(color: Colors.black38),
+                            prefixIcon: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: Icon(Icons.notes_rounded, color: AppColors.primary, size: 20),
+                            ),
+                            prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                              borderSide: const BorderSide(color: AppColors.border, width: 1.2),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                              borderSide: const BorderSide(color: AppColors.border, width: 1.2),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                            ),
                           ),
                         ),
 

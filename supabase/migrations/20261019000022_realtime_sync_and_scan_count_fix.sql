@@ -51,6 +51,7 @@ declare
   v_plan record;
   v_prev_scans integer := 0;
   v_total_scans integer := 1;
+  v_user_already_scanned boolean := false;
   v_now timestamptz := now();
 begin
   -- 1. Basic sanitization
@@ -141,11 +142,31 @@ begin
     );
   end if;
 
-  -- 5. Calculate scan count: Increment on EVERY authentic scan attempt!
+  -- 5. Calculate scan count: 1 Email / User = 1 Scan Count.
+  -- Only increment scan count if scanned from a different email / user account!
   v_prev_scans := coalesce(v_qr.scan_count, 0);
-  v_total_scans := v_prev_scans + 1;
 
-  -- 6. Atomically increment qr_codes scan_count and record scan timestamps
+  if v_user_id is not null then
+    select exists (
+      select 1 
+      from public.scan_records 
+      where qr_code_id = v_qr.id 
+        and scanned_by = v_user_id 
+        and is_valid = true
+    ) into v_user_already_scanned;
+  else
+    v_user_already_scanned := false;
+  end if;
+
+  if v_user_already_scanned then
+    -- Scanned by the same user account before: preserve existing scan count (do not increment)
+    v_total_scans := greatest(v_prev_scans, 1);
+  else
+    -- First time this user/account is scanning this bearing: increment scan count
+    v_total_scans := v_prev_scans + 1;
+  end if;
+
+  -- 6. Atomically update qr_codes scan_count and record scan timestamps
   update public.qr_codes
   set scan_count = v_total_scans,
       first_scanned_at = coalesce(v_qr.first_scanned_at, v_now),

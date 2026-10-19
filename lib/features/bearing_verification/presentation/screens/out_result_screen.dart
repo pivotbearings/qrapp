@@ -74,8 +74,6 @@ class _OutResultScreenState extends State<OutResultScreen> {
         ? (remainingDays > 0 ? '$remainingDays Days' : '0 Days (Expired)')
         : 'Active Balance';
 
-    final cleanProofId = widget.bearingId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: const IndustrialAppBar(title: 'Bearing Lifecycle'),
@@ -139,8 +137,6 @@ class _OutResultScreenState extends State<OutResultScreen> {
                     _buildRow('Warranty Status at Removal', warrantyStatusStr),
                     const Divider(),
                     _buildRow('Remaining Warranty Balance', remainingBalanceStr, isHeadline: true),
-                    const Divider(),
-                    _buildRow('Verification Proof', 'IMG-$cleanProofId-OUT [Encrypted & Stored]', isMono: true),
                     const SizedBox(height: AppDimensions.spaceSm),
                     const Text('Terminal Lifecycle Rule', style: AppTypography.caption),
                     const SizedBox(height: 2),

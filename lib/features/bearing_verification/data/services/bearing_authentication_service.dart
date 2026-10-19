@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/supabase_service.dart';
+import '../../../../core/auth/auth_controller.dart';
 import '../../domain/models/bearing_authentication_result.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
 
@@ -109,28 +110,65 @@ class BearingAuthenticationService {
             );
           }
 
+          final currentUserId = SupabaseService.currentUserId;
+          final currentEmail = AuthController.instance.userEmail?.trim().toLowerCase() ?? 'anonymous';
+          final scannedUsersKey = 'pbi_scanned_users_$bearingId';
+          final scannedUsersList = prefs.getStringList(scannedUsersKey) ?? <String>[];
+          final userIdentifier = currentUserId ?? currentEmail;
+
+          // Check if this user/account already authenticated this bearing
+          bool alreadyScannedByUser = scannedUsersList.contains(userIdentifier);
+
+          // If not in local cache, verify against scan_records in Supabase
+          if (!alreadyScannedByUser && qrId != null && currentUserId != null) {
+            try {
+              final priorScans = await SupabaseService.client
+                  .from('scan_records')
+                  .select('id')
+                  .eq('qr_code_id', qrId)
+                  .eq('scanned_by', currentUserId)
+                  .eq('is_valid', true)
+                  .limit(1);
+              if (priorScans.isNotEmpty) {
+                alreadyScannedByUser = true;
+              }
+            } catch (_) {}
+          }
+
           final dbScanCount = (row['scan_count'] as num?)?.toInt() ?? 0;
           final localCount = prefs.getInt('$_localScanCountPrefix$bearingId') ?? 0;
           final prevScanCount = dbScanCount > 0 ? dbScanCount : localCount;
-          final totalScans = prevScanCount + 1;
+          
+          // 1 email = 1 scan count: only increment if scanned from a new/different email/user
+          final int totalScans;
+          if (alreadyScannedByUser) {
+            totalScans = prevScanCount > 0 ? prevScanCount : 1;
+          } else {
+            totalScans = prevScanCount + 1;
+            scannedUsersList.add(userIdentifier);
+            await prefs.setStringList(scannedUsersKey, scannedUsersList);
+          }
+
           final nowIso = DateTime.now().toIso8601String();
 
           await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
           await prefs.setInt('$_localScanCountPrefix$bearingId', totalScans);
 
-          // Authoritatively increment scan_count in qr_codes
+          // Update qr_codes scan_count and log scan telemetry
           if (qrId != null) {
-            SupabaseService.client.from('qr_codes').update({
-              'scan_count': totalScans,
-              'last_scanned_at': nowIso,
-            }).eq('id', qrId).then((_) {}).catchError((_) {});
+            if (!alreadyScannedByUser) {
+              SupabaseService.client.from('qr_codes').update({
+                'scan_count': totalScans,
+                'last_scanned_at': nowIso,
+              }).eq('id', qrId).then((_) {}).catchError((_) {});
+            }
 
             // Log telemetry into scan_records
             SupabaseService.client.from('scan_records').insert({
               'qr_code_id': qrId,
               'scanned_payload': cleanPayload,
               'is_valid': true,
-              'scanned_by': SupabaseService.currentUserId,
+              'scanned_by': currentUserId,
               'device_info': deviceId,
               'scan_timestamp': nowIso,
             }).then((_) {}).catchError((_) {});
@@ -266,10 +304,24 @@ class BearingAuthenticationService {
 
     final countKey = '$_localScanCountPrefix$bearingId';
     final firstScanKey = '$_localFirstScanPrefix$bearingId';
+    final scannedUsersKey = 'pbi_scanned_users_$bearingId';
+    final currentEmail = AuthController.instance.userEmail?.trim().toLowerCase() ?? 'anonymous';
+    final currentUserId = SupabaseService.currentUserId;
+    final userIdentifier = currentUserId ?? currentEmail;
 
-    // Increment count on every authentic scan
+    final scannedUsersList = prefs.getStringList(scannedUsersKey) ?? <String>[];
+    final bool alreadyScannedByUser = scannedUsersList.contains(userIdentifier);
+
     final previousScans = prefs.getInt(countKey) ?? 0;
-    final totalScans = previousScans + 1;
+    final int totalScans;
+    if (alreadyScannedByUser) {
+      totalScans = previousScans > 0 ? previousScans : 1;
+    } else {
+      totalScans = previousScans + 1;
+      scannedUsersList.add(userIdentifier);
+      await prefs.setStringList(scannedUsersKey, scannedUsersList);
+    }
+
     await prefs.setInt(countKey, totalScans);
     await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
 
