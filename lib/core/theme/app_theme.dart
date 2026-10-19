@@ -7,7 +7,7 @@ import '../constants/app_typography.dart';
 ///
 /// Palette:
 /// - Background / Surface: #ECECEC
-/// - Primary / Foreground / Border: #001F59
+/// - Primary / Foreground / Border: #0065C1
 ///
 /// Strict rules:
 /// - Zero drop shadows (all elevations set to 0.0)

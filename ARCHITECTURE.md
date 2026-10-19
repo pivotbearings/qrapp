@@ -10,15 +10,15 @@ The Pivot Bearings India application is an enterprise-grade precision QR code ve
 ### Color Paradigm
 The entire user interface strictly uses a binary 2-color palette:
 - **Surface / Background**: `#ECECEC`
-- **Primary / Foreground / Borders / Icons**: `#001F59`
+- **Primary / Foreground / Borders / Icons**: `#0065C1`
 
 **Rules Enforced in Code:**
 - Zero pure white (`#FFFFFF`), pure black (`#000000`), or gray shades.
 - Zero gradients, colored overlay filters, or drop shadows (`elevation: 0.0` globally).
 - No opacity/alpha reductions (`rgba` prohibited).
 - Interaction states utilize inverse color fills:
-  - Primary button: Solid `#001F59` fill with `#ECECEC` label.
-  - Secondary button: `#ECECEC` fill with 1.5px `#001F59` border and label.
+  - Primary button: Solid `#0065C1` fill with `#ECECEC` label.
+  - Secondary button: `#ECECEC` fill with 1.5px `#0065C1` border and label.
   - Status indicators: Monoline outline tag with explicit text (e.g. `[STATUS: MARKED IN]`).
 
 ### Typography
@@ -41,7 +41,7 @@ The entire user interface strictly uses a binary 2-color palette:
 lib/
 ├── core/
 │   ├── config/             # Environment configuration (.env loader, timeouts)
-│   ├── constants/          # AppColors (#ECECEC & #001F59), AppDimensions, AppTypography
+│   ├── constants/          # AppColors (#ECECEC & #0065C1), AppDimensions, AppTypography
 │   ├── errors/             # Typed exception hierarchy (InvalidQr, Network, Lifecycle)
 │   ├── localization/       # Multi-language system (English, Hindi, Gujarati)
 │   ├── router/             # AppRoutes and AppRouter dynamic route generator

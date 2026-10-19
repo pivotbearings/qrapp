@@ -4,7 +4,7 @@ import '../constants/app_dimensions.dart';
 import '../constants/app_typography.dart';
 import '../router/app_routes.dart';
 
-/// Industrial Header / AppBar strictly in #ECECEC and #001F59
+/// Industrial Header / AppBar strictly in #ECECEC and #0065C1
 class IndustrialAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final bool showBackButton;

@@ -110,8 +110,8 @@ class _VerificationEvidenceCaptureScreenState
     // Background: #ECECEC
     img.fill(image, color: img.ColorRgb8(236, 236, 236));
 
-    // Outer border: #001F59
-    final primaryColor = img.ColorRgb8(0, 31, 89);
+    // Outer border: #0065C1
+    final primaryColor = img.ColorRgb8(0, 101, 193);
     img.drawRect(image, x1: 16, y1: 16, x2: width - 16, y2: height - 16, color: primaryColor);
     img.drawRect(image, x1: 20, y1: 20, x2: width - 20, y2: height - 20, color: primaryColor);
 

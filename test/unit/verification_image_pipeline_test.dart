@@ -11,7 +11,7 @@ void main() {
     setUp(() {
       // Create a test image with dimensions 2400 x 1600 (oversized)
       final image = img.Image(width: 2400, height: 1600);
-      img.fill(image, color: img.ColorRgb8(0, 31, 89)); // Brand Primary #001F59
+      img.fill(image, color: img.ColorRgb8(0, 101, 193)); // Brand Primary #0065C1
       testBitmapBytes = Uint8List.fromList(img.encodePng(image));
     });
 
