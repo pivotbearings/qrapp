@@ -10,8 +10,8 @@ import 'package:flutter/material.dart';
 /// Absolutely no pure white (#FFF), black (#000), intermediate grays,
 /// gradients, shadows, or alpha opacity variations are permitted.
 abstract class AppColors {
-  /// Base canvas and surface background (#ECECEC)
-  static const Color background = Color(0xFFECECEC);
+  /// Base canvas and surface background (#FFFFFF)
+  static const Color background = Color(0xFFFFFFFF);
 
   /// Primary navy foreground, text, borders, active surfaces, icons (#001F59)
   static const Color primary = Color(0xFF001F59);

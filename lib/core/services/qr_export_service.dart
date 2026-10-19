@@ -97,12 +97,12 @@ class QrExportService {
 </xml>
 <![endif]-->
 <style>
-  body { font-family: 'Arial', 'Helvetica', sans-serif; background-color: #ECECEC; color: #001F59; margin: 30px; }
+  body { font-family: 'Arial', 'Helvetica', sans-serif; background-color: #FFFFFF; color: #001F59; margin: 30px; }
   h1 { color: #001F59; font-size: 20pt; margin-bottom: 4px; text-transform: uppercase; }
   .subtitle { font-size: 11pt; color: #001F59; margin-bottom: 20px; font-weight: bold; }
-  .meta-box { border: 2px solid #001F59; padding: 12px; background-color: #ECECEC; margin-bottom: 24px; }
+  .meta-box { border: 2px solid #001F59; padding: 12px; background-color: #FFFFFF; margin-bottom: 24px; }
   table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  th { background-color: #001F59; color: #ECECEC; border: 1px solid #001F59; padding: 8px; font-size: 9pt; text-align: left; }
+  th { background-color: #001F59; color: #FFFFFF; border: 1px solid #001F59; padding: 8px; font-size: 9pt; text-align: left; }
   td { border: 1px solid #001F59; padding: 6px; font-size: 8.5pt; color: #001F59; }
   .footer { margin-top: 30px; font-size: 8pt; border-top: 1px solid #001F59; padding-top: 8px; text-align: center; }
 </style>
