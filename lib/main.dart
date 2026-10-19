@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'core/auth/auth_controller.dart';
 import 'core/config/app_config.dart';
 import 'core/localization/app_localizations.dart';
@@ -12,6 +13,7 @@ import 'features/qr_generation/data/repositories/qr_management_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  usePathUrlStrategy();
 
   // Initialize environment configuration and services
   await AppConfig.initialize();
@@ -25,18 +27,6 @@ Future<void> main() async {
 class PivotBearingsApp extends StatelessWidget {
   const PivotBearingsApp({super.key});
 
-  String _determineInitialRoute() {
-    if (!AuthController.instance.isAuthenticated) {
-      return AppRoutes.authLogin;
-    }
-    if (AuthController.instance.isAdmin) {
-      return AppRoutes.adminDashboard;
-    }
-    if (!AuthController.instance.isApproved) {
-      return AppRoutes.pendingVerification;
-    }
-    return AppRoutes.customerHome;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +45,7 @@ class PivotBearingsApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           supportedLocales: AppLocalizations.supportedLocales,
-          initialRoute: _determineInitialRoute(),
+          initialRoute: AppRoutes.initial,
           onGenerateRoute: AppRouter.onGenerateRoute,
         );
       },

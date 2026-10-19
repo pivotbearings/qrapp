@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_controller.dart';
+import '../constants/app_colors.dart';
+import '../constants/app_dimensions.dart';
+import '../constants/app_typography.dart';
 import '../../features/admin_dashboard/presentation/screens/admin_dashboard_screen.dart';
 import '../../features/auth/presentation/screens/access_denied_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
@@ -22,40 +25,97 @@ import 'app_routes.dart';
 
 class AppRouter {
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
-    switch (settings.name) {
+    // Clean and normalize route name (strip trailing slash for web URLs)
+    var routeName = settings.name ?? AppRoutes.initial;
+    if (routeName.length > 1 && routeName.endsWith('/')) {
+      routeName = routeName.substring(0, routeName.length - 1);
+    }
+
+    final auth = AuthController.instance;
+
+    switch (routeName) {
+      // Authentication Screen
       case AppRoutes.authLogin:
+        if (auth.isAuthenticated) {
+          if (auth.isAdmin) {
+            return MaterialPageRoute(builder: (_) => const AdminDashboardScreen());
+          }
+          if (!auth.isApproved) {
+            return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
+          }
+          return MaterialPageRoute(builder: (_) => const CustomerHomeScreen());
+        }
         return MaterialPageRoute(builder: (_) => const LoginScreen());
 
+      // Pending Verification
       case AppRoutes.pendingVerification:
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (auth.isApproved || auth.isAdmin) {
+          return MaterialPageRoute(
+            builder: (_) => auth.isAdmin ? const AdminDashboardScreen() : const CustomerHomeScreen(),
+          );
+        }
         return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
 
+      // Customer Profile & Account Details
       case AppRoutes.customerProfile:
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
         return MaterialPageRoute(builder: (_) => const CustomerProfileScreen());
 
+      // Root Initial & Customer Home Routes
       case AppRoutes.initial:
-      case AppRoutes.customerHome:
-        if (!AuthController.instance.isApproved && !AuthController.instance.isAdmin) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (auth.isAdmin) {
+          return MaterialPageRoute(builder: (_) => const AdminDashboardScreen());
+        }
+        if (!auth.isApproved) {
           return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
         }
         return MaterialPageRoute(builder: (_) => const CustomerHomeScreen());
 
+      case AppRoutes.customerHome:
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.isApproved && !auth.isAdmin) {
+          return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
+        }
+        return MaterialPageRoute(builder: (_) => const CustomerHomeScreen());
+
+      // Optical QR Viewfinder Scanner
       case AppRoutes.qrScanner:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
         }
         return MaterialPageRoute(builder: (_) => const QrScannerScreen());
 
+      // Bearing Authentication (Always accessible to all authenticated users)
       case AppRoutes.bearingAuthentication:
-        // Bearing Authentication is universally accessible to all registered users
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
         final initialPayload = (settings.arguments as String?);
         return MaterialPageRoute(
           builder: (_) => BearingAuthenticationScreen(initialPayload: initialPayload),
         );
 
+      // Track Bearing
       case AppRoutes.trackBearing:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -66,7 +126,10 @@ class AppRouter {
         );
 
       case AppRoutes.bearingVerification:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -75,7 +138,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => BearingVerificationScreen(bearingId: id));
 
       case AppRoutes.inConfirmation:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -84,7 +150,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => InConfirmationScreen(bearingId: id));
 
       case AppRoutes.inVerificationCapture:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -98,7 +167,10 @@ class AppRouter {
         );
 
       case AppRoutes.inSuccess:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -107,7 +179,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => InSuccessScreen(bearingId: id));
 
       case AppRoutes.outConfirmation:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -116,7 +191,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => OutConfirmationScreen(bearingId: id));
 
       case AppRoutes.outVerificationCapture:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -130,7 +208,10 @@ class AppRouter {
         );
 
       case AppRoutes.outResult:
-        if (!AuthController.instance.hasTrackBearingAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasTrackBearingAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
@@ -140,7 +221,10 @@ class AppRouter {
 
       // RBAC Protected Admin Modules
       case AppRoutes.adminDashboard:
-        if (!AuthController.instance.isAdmin) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.isAdmin) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Executive Admin Dashboard'),
           );
@@ -148,7 +232,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => const AdminDashboardScreen());
 
       case AppRoutes.qrBulkGeneration:
-        if (!AuthController.instance.isAdmin) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.isAdmin) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'QR Bulk Matrix Generator'),
           );
@@ -156,7 +243,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => const QrBulkGenerationScreen());
 
       case AppRoutes.qrInventory:
-        if (!AuthController.instance.isAdmin) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.isAdmin) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'QR Registry & Master Inventory'),
           );
@@ -165,11 +255,14 @@ class AppRouter {
 
       case AppRoutes.accessDenied:
         return MaterialPageRoute(
-          builder: (_) => const AccessDeniedScreen(attemptedModule: 'Executive Admin Dashboard'),
+          builder: (_) => const AccessDeniedScreen(attemptedModule: 'Requested Protected Area'),
         );
 
       case AppRoutes.warrantyCheck:
-        if (!AuthController.instance.hasWarrantyAccess) {
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        if (!auth.hasWarrantyAccess) {
           return MaterialPageRoute(
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Warranty Module'),
           );
@@ -179,9 +272,49 @@ class AppRouter {
 
       default:
         return MaterialPageRoute(
-          builder: (_) => Scaffold(
+          builder: (context) => Scaffold(
+            backgroundColor: AppColors.background,
             body: Center(
-              child: Text('Route not found: ${settings.name}'),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppDimensions.gutterMobile),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.explore_off_rounded, color: Colors.white, size: 32),
+                      ),
+                      const SizedBox(height: AppDimensions.spaceMd),
+                      const Text('PAGE NOT FOUND', style: AppTypography.headlineSm),
+                      const SizedBox(height: 6),
+                      Text(
+                        'The requested URL path "$routeName" does not exist or has been moved.',
+                        style: AppTypography.caption,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppDimensions.spaceLg),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.home, size: 18),
+                        label: const Text('RETURN TO HOME'),
+                        onPressed: () {
+                          Navigator.pushNamedAndRemoveUntil(
+                            context,
+                            auth.isAdmin ? AppRoutes.adminDashboard : AppRoutes.customerHome,
+                            (route) => false,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         );

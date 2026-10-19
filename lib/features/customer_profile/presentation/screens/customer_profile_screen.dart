@@ -316,6 +316,22 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     const SizedBox(height: AppDimensions.spaceLg),
 
                     // Actions Tray
+                    if (auth.isAdmin) ...[
+                      IndustrialButton(
+                        label: 'OPEN ADMIN WORKSTATION',
+                        icon: Icons.admin_panel_settings,
+                        onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                      ),
+                      const SizedBox(height: AppDimensions.spaceSm),
+                    ] else ...[
+                      IndustrialButton.secondary(
+                        label: 'SIGN IN AS ADMINISTRATOR',
+                        icon: Icons.admin_panel_settings_outlined,
+                        onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                      ),
+                      const SizedBox(height: AppDimensions.spaceSm),
+                    ],
+
                     IndustrialButton.danger(
                       label: loc.translate('sign_out'),
                       icon: Icons.logout,
@@ -345,6 +361,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     required bool isSelected,
   }) {
     return InkWell(
+      mouseCursor: SystemMouseCursors.click,
       onTap: () => _onLanguageSelected(code),
       borderRadius: BorderRadius.circular(50),
       child: Container(

@@ -126,6 +126,7 @@ class IndustrialButton extends StatelessWidget {
           ),
         ),
         child: InkWell(
+          mouseCursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
           onTap: isEnabled ? _onTapHandler : null,
           borderRadius: BorderRadius.circular(50),
           child: Center(

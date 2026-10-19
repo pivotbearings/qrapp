@@ -35,6 +35,7 @@ class IndustrialCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          mouseCursor: onTap != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
           borderRadius: effectiveRadius,
           onTap: onTap,
           child: Padding(

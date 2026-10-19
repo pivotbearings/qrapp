@@ -370,6 +370,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 final isSelected = _selectedTabIndex == index;
 
                 return InkWell(
+                  mouseCursor: SystemMouseCursors.click,
                   onTap: () => _onTabSelected(index),
                   borderRadius: BorderRadius.circular(50),
                   child: Container(
@@ -410,6 +411,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
             child: InkWell(
+              mouseCursor: SystemMouseCursors.click,
               onTap: _handleSignOut,
               borderRadius: BorderRadius.circular(50),
               child: Container(
@@ -500,6 +502,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   final isSelected = _selectedTabIndex == index;
 
                   return InkWell(
+                    mouseCursor: SystemMouseCursors.click,
                     onTap: () => _onTabSelected(index),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
                     child: Container(

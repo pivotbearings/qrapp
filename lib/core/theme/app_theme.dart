@@ -61,9 +61,11 @@ abstract class AppTheme {
         ),
       ),
 
-      // Primary & Secondary Buttons - Strictly Pill-Shaped
+      // Primary & Secondary Buttons - Strictly Pill-Shaped with click mouse cursors
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
+          enabledMouseCursor: SystemMouseCursors.click,
+          disabledMouseCursor: SystemMouseCursors.basic,
           elevation: 0.0,
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.background,
@@ -84,6 +86,8 @@ abstract class AppTheme {
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          enabledMouseCursor: SystemMouseCursors.click,
+          disabledMouseCursor: SystemMouseCursors.basic,
           elevation: 0.0,
           backgroundColor: AppColors.background,
           foregroundColor: AppColors.primary,
@@ -104,10 +108,22 @@ abstract class AppTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
+          enabledMouseCursor: SystemMouseCursors.click,
+          disabledMouseCursor: SystemMouseCursors.basic,
           foregroundColor: AppColors.primary,
           textStyle: AppTypography.labelMd,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(50),
+          ),
+        ),
+      ),
+
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.click,
           ),
         ),
       ),

@@ -138,6 +138,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                                   ],
                                 ),
                               ),
+                              if (auth.isAdmin)
+                                IconButton(
+                                  icon: const Icon(Icons.admin_panel_settings_rounded, color: AppColors.primary, size: 26),
+                                  tooltip: 'Open Admin Workstation',
+                                  onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                                ),
                               IconButton(
                                 icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
                                 tooltip: 'Refresh Dashboard',
@@ -147,6 +153,75 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                           ),
 
                           const SizedBox(height: AppDimensions.spaceMd),
+
+                          // Admin Workstation Quick Access Banner
+                          if (auth.isAdmin) ...[
+                            InkWell(
+                              mouseCursor: SystemMouseCursors.click,
+                              onTap: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black12,
+                                      blurRadius: 8,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'ADMIN WORKSTATION',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 13,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Tap to open telemetry, QR generation & registry',
+                                            style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'OPEN',
+                                        style: TextStyle(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppDimensions.spaceMd),
+                          ],
 
                           // Dynamic Metric Row (visible if Warranty or Track module is enabled)
                           if (auth.hasTrackBearingAccess || auth.hasWarrantyAccess) ...[
@@ -166,6 +241,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                                 if (auth.hasWarrantyAccess)
                                   Expanded(
                                     child: InkWell(
+                                      mouseCursor: SystemMouseCursors.click,
                                       onTap: () => _safeNavigate(AppRoutes.warrantyCheck),
                                       borderRadius: BorderRadius.circular(24),
                                       child: _buildMetricTile(
@@ -281,6 +357,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         side: const BorderSide(color: Color(0xFF0D8A4E), width: 1.8),
       ),
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         onTap: () => _safeNavigate(AppRoutes.bearingAuthentication),
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
         child: Padding(
@@ -353,6 +430,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         side: const BorderSide(color: AppColors.primary, width: 1.8),
       ),
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         onTap: () => _safeNavigate(AppRoutes.trackBearing),
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
         child: Padding(
@@ -425,6 +503,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         side: const BorderSide(color: AppColors.primary, width: 1.8),
       ),
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         onTap: () => _safeNavigate(AppRoutes.qrScanner),
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
         child: Padding(
@@ -497,6 +576,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         side: const BorderSide(color: AppColors.primary, width: 1.8),
       ),
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         onTap: () => _safeNavigate(AppRoutes.warrantyCheck),
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
         child: Padding(
