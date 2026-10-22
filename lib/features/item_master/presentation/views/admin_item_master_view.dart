@@ -236,7 +236,6 @@ class _AdminItemMasterViewState extends State<AdminItemMasterView> {
     final codeCtrl = TextEditingController(text: itemToEdit?.itemCode ?? '');
     final nameCtrl = TextEditingController(text: itemToEdit?.itemName ?? '');
     String? selectedCategory = itemToEdit?.category;
-    final warrantyCtrl = TextEditingController(text: itemToEdit != null ? itemToEdit.defaultWarrantyMonths.toString() : '');
     final descCtrl = TextEditingController(text: itemToEdit?.description ?? '');
     String? localError;
 
@@ -365,32 +364,7 @@ class _AdminItemMasterViewState extends State<AdminItemMasterView> {
                     ),
                     const SizedBox(height: AppDimensions.spaceSm),
 
-                    // 4. Default Warranty Duration in Months (Pill input, No heading, No default value)
-                    TextField(
-                      controller: warrantyCtrl,
-                      keyboardType: TextInputType.number,
-                      style: AppTypography.bodyMd,
-                      decoration: InputDecoration(
-                        hintText: 'Default Warranty Duration in Months (e.g. 6) *',
-                        hintStyle: AppTypography.bodySm.copyWith(color: AppColors.primary.withValues(alpha: 0.55)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(50),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(50),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(50),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 2.0),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppDimensions.spaceSm),
-
-                    // 5. Technical Specifications (Pill input, No heading, Clear placeholder)
+                    // 4. Technical Specifications (Pill input, No heading, Clear placeholder)
                     TextField(
                       controller: descCtrl,
                       style: AppTypography.bodyMd,
@@ -440,7 +414,7 @@ class _AdminItemMasterViewState extends State<AdminItemMasterView> {
                     });
                     return;
                   }
-                  final warranty = int.tryParse(warrantyCtrl.text.trim()) ?? 6;
+                  final warranty = itemToEdit?.defaultWarrantyMonths ?? 6;
 
                   final item = BearingItemModel(
                     itemCode: code,

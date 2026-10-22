@@ -69,7 +69,6 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
     final codeCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
     String? selectedCategory;
-    final warrantyCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     String? localError;
 
@@ -191,38 +190,13 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
                     ),
                     const SizedBox(height: AppDimensions.spaceSm),
 
-                    // 4. Default Warranty in Months (Pill input, No heading, No default value)
-                    TextField(
-                      controller: warrantyCtrl,
-                      keyboardType: TextInputType.number,
-                      style: AppTypography.bodyMd,
-                      decoration: InputDecoration(
-                        hintText: 'Default Warranty Duration in Months (e.g. 6) *',
-                        hintStyle: AppTypography.bodySm.copyWith(color: AppColors.primary.withOpacity(0.55)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(50),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(50),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(50),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 2.0),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppDimensions.spaceSm),
-
-                    // 5. Technical Specifications (Pill input, No heading, Clear placeholder)
+                    // 4. Technical Specifications (Pill input, No heading, Clear placeholder)
                     TextField(
                       controller: descCtrl,
                       style: AppTypography.bodyMd,
                       decoration: InputDecoration(
                         hintText: 'Technical Specifications (Optional)',
-                        hintStyle: AppTypography.bodySm.copyWith(color: AppColors.primary.withOpacity(0.55)),
+                        hintStyle: AppTypography.bodySm.copyWith(color: AppColors.primary.withValues(alpha: 0.55)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(50),
@@ -266,7 +240,7 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
                     });
                     return;
                   }
-                  final warranty = int.tryParse(warrantyCtrl.text.trim()) ?? 6;
+                  const warranty = 6;
 
                   final newItem = BearingItemModel(
                     itemCode: code,

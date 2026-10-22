@@ -62,7 +62,7 @@ class BearingTrackService {
     }
 
     // 2. Resilient Local Lifecycle Engine (Offline / Local Fallback)
-    res = await _localTrackScan(cleanPayload);
+    res = await _localTrackScan(cleanPayload, notes: notes);
     return await _attachRewardIfApplicable(res, cleanPayload);
   }
 
@@ -97,7 +97,7 @@ class BearingTrackService {
     return id.toUpperCase().trim();
   }
 
-  static Future<BearingTrackResult> _localTrackScan(String cleanPayload) async {
+  static Future<BearingTrackResult> _localTrackScan(String cleanPayload, {String? notes}) async {
     final bearingId = _extractBearingId(cleanPayload);
 
     // Validate identifier against registry or cryptographic format
@@ -125,6 +125,14 @@ class BearingTrackService {
     final inTimeKey = '$_trackInTimePrefix$bearingId';
     final historyKey = '$_trackHistoryPrefix$bearingId';
     final outTimeKey = '$_trackOutTimePrefix$bearingId';
+    final notesKey = 'pbi_bearing_notes_$bearingId';
+
+    if (notes != null && notes.trim().isNotEmpty) {
+      await prefs.setString(notesKey, notes.trim());
+    }
+    final effectiveNotes = (notes != null && notes.trim().isNotEmpty)
+        ? notes.trim()
+        : prefs.getString(notesKey);
 
     final currentState = prefs.getString(stateKey) ?? 'OUT';
     final now = DateTime.now();
@@ -254,7 +262,7 @@ class BearingTrackService {
         durationHours: hours,
         durationMinutes: minutes,
         message: 'Bearing Out recorded successfully.',
-        notes: prefs.getString('pbi_bearing_notes_$bearingId'),
+        notes: effectiveNotes,
         lifecycleHistory: history,
         rawPayload: cleanPayload,
       );
@@ -314,9 +322,31 @@ class BearingTrackService {
         cycleNumber: history.length + 1,
         inTimestamp: now,
         message: 'Bearing In recorded successfully. Usage tracking has started.',
+        notes: effectiveNotes,
         lifecycleHistory: history,
         rawPayload: cleanPayload,
       );
+    }
+  }
+
+  /// Persist or update notes for a bearing
+  static Future<void> saveBearingNotes(String bearingId, String notes) async {
+    final id = _extractBearingId(bearingId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pbi_bearing_notes_$id', notes.trim());
+
+    if (SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client
+            .from('qr_codes')
+            .update({
+              'notes': notes.trim(),
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('bearing_id', id);
+      } catch (e) {
+        debugPrint('saveBearingNotes Supabase sync notice: $e');
+      }
     }
   }
 

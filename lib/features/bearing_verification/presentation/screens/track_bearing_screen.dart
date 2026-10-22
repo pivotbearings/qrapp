@@ -244,6 +244,29 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _notesController,
+                  maxLines: 2,
+                  minLines: 1,
+                  style: AppTypography.bodySm.copyWith(color: Colors.black87),
+                  decoration: InputDecoration(
+                    hintText: 'Notes / Remarks (Optional)',
+                    hintStyle: AppTypography.bodySm.copyWith(color: Colors.black38),
+                    prefixIcon: const Icon(Icons.note_alt_outlined, size: 18, color: AppColors.primary),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 2.0),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 14),
                 Text(
                   'Quick Test Samples:',
@@ -349,6 +372,104 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           ),
         ),
       ),
+    );
+  }
+
+  void _showEditNotesDialog(String bearingId, {String? initialNotes}) {
+    final notesDialogCtrl = TextEditingController(text: initialNotes ?? _notesController.text.trim());
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppColors.background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.note_alt_outlined, color: AppColors.primary, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Tracking Notes',
+                  style: AppTypography.headlineSm.copyWith(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add machine, installation, or operational remarks for this bearing:',
+                style: AppTypography.caption.copyWith(color: Colors.black87),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesDialogCtrl,
+                autofocus: true,
+                maxLines: 3,
+                style: AppTypography.bodySm.copyWith(color: Colors.black87),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Spindle Unit #4, routine replacement...',
+                  hintStyle: AppTypography.bodySm.copyWith(color: Colors.black38),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 2.0),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: AppTypography.labelMd.copyWith(color: AppColors.primary),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.background,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                ),
+              ),
+              onPressed: () async {
+                final newNotes = notesDialogCtrl.text.trim();
+                Navigator.pop(ctx);
+                _notesController.text = newNotes;
+                if (bearingId.isNotEmpty) {
+                  await BearingTrackService.saveBearingNotes(bearingId, newNotes);
+                }
+                if (mounted && _trackResult != null) {
+                  setState(() {
+                    _trackResult = _trackResult!.copyWithNotes(newNotes);
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Notes updated successfully'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save Note'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -464,6 +585,61 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           ),
 
           const SizedBox(height: AppDimensions.spaceMd),
+
+          // Optional Notes Card for Tracking
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+              border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.note_alt_outlined, size: 18, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tracking Notes (Optional)',
+                      style: AppTypography.labelMd.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _notesController,
+                  maxLines: 2,
+                  minLines: 1,
+                  style: AppTypography.bodySm.copyWith(color: Colors.black87),
+                  decoration: InputDecoration(
+                    hintText: 'Add machine name, spindle #, location, or remarks...',
+                    hintStyle: AppTypography.bodySm.copyWith(color: Colors.black38),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           const SizedBox(height: AppDimensions.spaceMd),
 
           // Primary CTA: Scan Bearing QR Code
@@ -1114,9 +1290,60 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 ),
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted, isSuccess: true),
-                _buildSpecRow('Status', 'Operating / In Use', isSuccess: true),
-                if (_notesController.text.trim().isNotEmpty)
-                  _buildSpecRow('Notes', _notesController.text.trim()),
+                Builder(
+                  builder: (_) {
+                    final activeNotes = (result.notes != null && result.notes!.isNotEmpty)
+                        ? result.notes!
+                        : _notesController.text.trim();
+                    if (activeNotes.isNotEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(child: _buildSpecRow('Notes', activeNotes)),
+                            InkWell(
+                              onTap: () => _showEditNotesDialog(result.bearingId ?? '', initialNotes: activeNotes),
+                              child: const Padding(
+                                padding: EdgeInsets.only(top: 2, left: 6),
+                                child: Icon(Icons.edit_note_rounded, size: 22, color: AppColors.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: InkWell(
+                        onTap: () => _showEditNotesDialog(result.bearingId ?? ''),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withAlpha(12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.primary.withAlpha(40)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.add_comment_outlined, size: 16, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Add Notes / Installation Remarks',
+                                style: AppTypography.caption.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -1308,8 +1535,60 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   result.formattedUsageDuration.replaceAll('You used this bearing for ', '').replaceAll('.', ''),
                   isHighlighted: true,
                 ),
-                if (_notesController.text.trim().isNotEmpty)
-                  _buildSpecRow('Notes', _notesController.text.trim()),
+                Builder(
+                  builder: (_) {
+                    final activeNotes = (result.notes != null && result.notes!.isNotEmpty)
+                        ? result.notes!
+                        : _notesController.text.trim();
+                    if (activeNotes.isNotEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(child: _buildSpecRow('Notes', activeNotes)),
+                            InkWell(
+                              onTap: () => _showEditNotesDialog(result.bearingId ?? '', initialNotes: activeNotes),
+                              child: const Padding(
+                                padding: EdgeInsets.only(top: 2, left: 6),
+                                child: Icon(Icons.edit_note_rounded, size: 22, color: AppColors.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: InkWell(
+                        onTap: () => _showEditNotesDialog(result.bearingId ?? ''),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withAlpha(12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.primary.withAlpha(40)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.add_comment_outlined, size: 16, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Add Notes / Installation Remarks',
+                                style: AppTypography.caption.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),

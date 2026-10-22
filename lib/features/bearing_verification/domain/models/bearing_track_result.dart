@@ -118,6 +118,29 @@ class BearingTrackResult {
     );
   }
 
+  BearingTrackResult copyWithNotes(String newNotes) {
+    return BearingTrackResult(
+      isValid: isValid,
+      action: action,
+      bearingId: bearingId,
+      modelNumber: modelNumber,
+      batchCode: batchCode,
+      plantLocation: plantLocation,
+      cycleNumber: cycleNumber,
+      inTimestamp: inTimestamp,
+      outTimestamp: outTimestamp,
+      durationSeconds: durationSeconds,
+      durationDays: durationDays,
+      durationHours: durationHours,
+      durationMinutes: durationMinutes,
+      message: message,
+      notes: newNotes,
+      lifecycleHistory: lifecycleHistory,
+      rawPayload: rawPayload,
+      rewardClaim: rewardClaim,
+    );
+  }
+
   bool get isBearingIn => isValid && action == 'BEARING_IN';
   bool get isBearingOut => isValid && action == 'BEARING_OUT';
   /// Terminal state: bearing permanently decommissioned, no further scans allowed
