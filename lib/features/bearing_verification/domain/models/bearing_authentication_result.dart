@@ -5,6 +5,10 @@
 /// - Second Scan: Genuine bearing, previously scanned exactly once.
 /// - Third+ Scans: Genuine bearing, previously scanned N times.
 /// - Invalid: Unregistered, altered, or malformed QR code.
+library;
+
+import '../../../rewards/domain/models/reward_models.dart';
+
 class BearingAuthenticationResult {
   final bool isAuthentic;
   final int previousScanCount;
@@ -23,6 +27,7 @@ class BearingAuthenticationResult {
   final String? message;
   final String? rawPayload;
   final String? errorCode;
+  final RewardClaimResult? rewardClaim;
 
   const BearingAuthenticationResult({
     required this.isAuthentic,
@@ -42,7 +47,31 @@ class BearingAuthenticationResult {
     this.message,
     this.rawPayload,
     this.errorCode,
+    this.rewardClaim,
   });
+
+  BearingAuthenticationResult copyWithReward(RewardClaimResult? claim) {
+    return BearingAuthenticationResult(
+      isAuthentic: isAuthentic,
+      previousScanCount: previousScanCount,
+      totalScanCount: totalScanCount,
+      bearingId: bearingId,
+      modelNumber: modelNumber,
+      batchCode: batchCode,
+      plantLocation: plantLocation,
+      warrantyPlanTitle: warrantyPlanTitle,
+      warrantyDurationMonths: warrantyDurationMonths,
+      currentLifecycleState: currentLifecycleState,
+      firstScannedAt: firstScannedAt,
+      lastScannedAt: lastScannedAt,
+      isFlagged: isFlagged,
+      flagReason: flagReason,
+      message: message,
+      rawPayload: rawPayload,
+      errorCode: errorCode,
+      rewardClaim: claim ?? rewardClaim,
+    );
+  }
 
   /// Factory from Supabase `authenticate_bearing_qr` RPC JSON response
   factory BearingAuthenticationResult.fromJson(

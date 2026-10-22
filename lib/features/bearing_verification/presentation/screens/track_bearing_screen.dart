@@ -14,6 +14,7 @@ import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/whatsapp_icon.dart';
 import '../../data/services/bearing_track_service.dart';
 import '../../domain/models/bearing_track_result.dart';
+import '../../../rewards/domain/models/reward_models.dart';
 
 enum TrackViewStep {
   landing,
@@ -1062,6 +1063,14 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
             ),
           ),
 
+          if (result.rewardClaim?.rewardAwarded == true) ...[
+            const SizedBox(height: AppDimensions.spaceSm),
+            _buildRewardEarnedBanner(result.rewardClaim!),
+          ] else if (result.rewardClaim?.isUserBlocked == true) ...[
+            const SizedBox(height: AppDimensions.spaceSm),
+            _buildRewardBlockedBanner(result.rewardClaim!),
+          ],
+
           const SizedBox(height: AppDimensions.spaceMd),
 
           // Installation Entry Details Card
@@ -1382,6 +1391,114 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
             ),
           ),
           const SizedBox(height: AppDimensions.spaceMd),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardEarnedBanner(RewardClaimResult claim) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+        border: Border.all(color: AppColors.primary, width: 2.0),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.stars_rounded, color: AppColors.primary, size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '🎉 1ST SCAN REWARD CLAIMED!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '+${claim.pointsEarned} Points (≈ ₹${claim.amountInr.toStringAsFixed(2)}) Credited',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+                if (claim.rateDisplay.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Program Rate: ${claim.rateDisplay}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardBlockedBanner(RewardClaimResult claim) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+        border: Border.all(color: AppColors.primary.withAlpha(60), width: 1.2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(20),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'TRACKING VERIFIED • STANDARD ACCOUNT',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  claim.message.isNotEmpty
+                      ? claim.message
+                      : 'Bearing tracking verified. Promotional reward points are currently inactive for this account profile.',
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

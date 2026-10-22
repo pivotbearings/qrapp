@@ -210,6 +210,49 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
     }
   }
 
+  Future<void> _updateRewardEligibility({
+    required Map<String, dynamic> user,
+    required bool isEligible,
+  }) async {
+    final userId = user['id']?.toString() ?? '';
+    final userEmail = user['email']?.toString() ?? '';
+
+    setState(() {
+      _savingUserIds.add(userId);
+      user['is_reward_eligible'] = isEligible;
+    });
+
+    try {
+      final ok = await SupabaseService.updateUserRewardEligibility(
+        userId: userId,
+        isEligible: isEligible,
+        email: userEmail,
+      );
+
+      if (mounted) {
+        setState(() => _savingUserIds.remove(userId));
+        if (ok) {
+          AppSnackBar.showSuccess(
+            context,
+            isEligible
+                ? 'Reward points enabled for $userEmail'
+                : 'Reward points blocked for $userEmail',
+          );
+        } else {
+          AppSnackBar.showError(
+            context,
+            'Failed to sync online. Updated locally.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _savingUserIds.remove(userId));
+        AppSnackBar.showError(context, 'Error updating reward status: $e');
+      }
+    }
+  }
+
   Future<void> _updateAuthorisedNumbers({
     required Map<String, dynamic> user,
     required List<String> numbers,
@@ -442,9 +485,10 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
     final isApproved = user['is_approved'] == true;
     final isAdmin = role == 'ADMIN';
 
-    // Module Permissions
+    // Module Permissions & Reward Eligibility
     final hasWarranty = isAdmin || user['has_warranty_access'] == true;
     final hasTrack = isAdmin || user['has_track_bearing_access'] == true;
+    final isRewardEligible = user['is_reward_eligible'] != false;
 
     final isExpanded = _expandedEmails.contains(email);
     final isSaving = _savingUserIds.contains(userId);
@@ -545,6 +589,24 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                             ),
                           ),
                         ),
+                        // Rewards Blocked Pill
+                        if (!isRewardEligible)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.black26, width: 1.0),
+                            ),
+                            child: const Text(
+                              'REWARDS: BLOCKED',
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ],
@@ -688,6 +750,27 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                         user: user,
                         hasWarranty: hasWarranty,
                         hasTrackBearing: newVal,
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Toggle 3: Reward Points Eligibility (Can block user anytime)
+                  _buildModuleToggleTile(
+                    title: '3. Reward Points Eligibility',
+                    subtitle: isRewardEligible
+                        ? 'User is eligible to earn 1st scan reward points and request payouts.'
+                        : 'User is blocked from reward points. Scan verification displays polite standard notice.',
+                    icon: Icons.stars_rounded,
+                    value: isRewardEligible,
+                    isDisabled: false,
+                    enabledLabel: 'ELIGIBLE',
+                    disabledLabel: 'BLOCKED',
+                    onChanged: (newVal) {
+                      _updateRewardEligibility(
+                        user: user,
+                        isEligible: newVal,
                       );
                     },
                   ),
@@ -854,9 +937,12 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
 
   Widget _buildModuleToggleTile({
     required String title,
+    String? subtitle,
     required IconData icon,
     required bool value,
     required bool isDisabled,
+    String enabledLabel = 'ENABLED',
+    String disabledLabel = 'DISABLED',
     required ValueChanged<bool> onChanged,
   }) {
     return Container(
@@ -870,40 +956,63 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
         ),
       ),
       child: Row(
+        crossAxisAlignment: subtitle != null ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: value ? AppColors.primary : Colors.black45, size: 22),
+          Padding(
+            padding: EdgeInsets.only(top: subtitle != null ? 2.0 : 0.0),
+            child: Icon(icon, color: value ? AppColors.primary : Colors.black45, size: 22),
+          ),
           const SizedBox(width: 12),
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: AppTypography.bodySm.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: value ? AppColors.primary : Colors.black87,
-                    fontSize: 13,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: AppTypography.bodySm.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: value ? AppColors.primary : Colors.black87,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: value ? _greenBackground : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: value ? _greenBorder : Colors.black26,
+                          width: 1.0,
+                        ),
+                      ),
+                      child: Text(
+                        value ? enabledLabel : disabledLabel,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: value ? _greenTextDark : Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: value ? _greenBackground : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: value ? _greenBorder : Colors.black26,
-                      width: 1.0,
+                if (subtitle != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.black54,
+                      height: 1.3,
                     ),
                   ),
-                  child: Text(
-                    value ? 'ENABLED' : 'DISABLED',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      color: value ? _greenTextDark : Colors.black54,
-                    ),
-                  ),
-                ),
+                ],
               ],
             ),
           ),

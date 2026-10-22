@@ -6,6 +6,8 @@ import '../../domain/models/bearing_track_result.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 
+import '../../../rewards/data/services/reward_service.dart';
+
 /// Pivot Bearings India - Bearing Tracking Service
 ///
 /// Manages QR-only IN/OUT lifecycle transitions without photographs or evidence capture:
@@ -29,10 +31,12 @@ class BearingTrackService {
       );
     }
 
+    BearingTrackResult res;
+
     // 1. Authoritative Supabase RPC Execution
     if (SupabaseService.isInitialized) {
       try {
-        final dynamic res = await SupabaseService.client.rpc(
+        final dynamic rpcRes = await SupabaseService.client.rpc(
           'track_bearing_scan',
           params: {
             'p_scanned_payload': cleanPayload,
@@ -40,17 +44,17 @@ class BearingTrackService {
           },
         );
 
-        if (res != null && res is Map) {
-          final data = Map<String, dynamic>.from(res);
-          final result = BearingTrackResult.fromJson(data, rawPayload: cleanPayload);
+        if (rpcRes != null && rpcRes is Map) {
+          final data = Map<String, dynamic>.from(rpcRes);
+          res = BearingTrackResult.fromJson(data, rawPayload: cleanPayload);
           // Sync with local & admin QR registry
           await QrManagementRepository.syncBearingStateChange(
-            bearingId: result.bearingId ?? _extractBearingId(cleanPayload),
-            newState: result.action == 'BEARING_IN' ? 'CURRENTLY_IN' : 'CURRENTLY_OUT',
-            inTimestamp: result.inTimestamp,
-            outTimestamp: result.outTimestamp,
+            bearingId: res.bearingId ?? _extractBearingId(cleanPayload),
+            newState: res.action == 'BEARING_IN' ? 'CURRENTLY_IN' : 'CURRENTLY_OUT',
+            inTimestamp: res.inTimestamp,
+            outTimestamp: res.outTimestamp,
           );
-          return result;
+          return await _attachRewardIfApplicable(res, cleanPayload);
         }
       } catch (e) {
         debugPrint('Supabase RPC track_bearing_scan failed, falling back to local engine: $e');
@@ -58,7 +62,23 @@ class BearingTrackService {
     }
 
     // 2. Resilient Local Lifecycle Engine (Offline / Local Fallback)
-    return await _localTrackScan(cleanPayload);
+    res = await _localTrackScan(cleanPayload);
+    return await _attachRewardIfApplicable(res, cleanPayload);
+  }
+
+  static Future<BearingTrackResult> _attachRewardIfApplicable(BearingTrackResult res, String cleanPayload) async {
+    if (res.isValid && !res.isAlreadyOut) {
+      try {
+        final reward = await RewardService.claimBearingScanReward(
+          rawPayloadOrId: cleanPayload,
+          sourceModule: 'TRACK_BEARING',
+        );
+        return res.copyWithReward(reward);
+      } catch (e) {
+        debugPrint('Track bearing reward hook error: $e');
+      }
+    }
+    return res;
   }
 
   static String _extractBearingId(String payload) {

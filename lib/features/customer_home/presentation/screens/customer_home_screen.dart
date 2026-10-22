@@ -8,6 +8,8 @@ import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../bearing_verification/data/models/bearing_model.dart';
 import '../../../bearing_verification/data/repositories/bearing_repository.dart';
+import '../../../rewards/domain/models/reward_models.dart';
+import '../../../rewards/data/services/reward_service.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({super.key});
@@ -23,6 +25,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   int _outCount = 0;
   int _activeCount = 0;
   bool _isNavigating = false;
+  RewardProfile _rewardProfile = RewardProfile.defaultProfile();
 
   void _safeNavigate(String routeName) {
     if (_isNavigating) return;
@@ -70,6 +73,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         _activeCount = bearings.where((b) => !b.isWarrantyExpired && b.state != BearingLifecycleState.notActivated).length;
       });
     }
+
+    try {
+      final rp = await RewardService.fetchUserRewardProfile();
+      if (mounted) {
+        setState(() => _rewardProfile = rp);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -262,24 +272,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                             const SizedBox(height: AppDimensions.spaceMd),
                           ],
 
-                          // 1. BEARING AUTHENTICATION PAGE (Always Available to All Registered Users)
-                          _buildAuthenticationCard(),
-
+                          // REWARD POINTS WALLET BANNER (Visible to all registered users)
+                          _buildRewardWalletCard(),
                           const SizedBox(height: AppDimensions.spaceSm),
-
-                          // 2. TRACK YOUR BEARING MODULE (Only visible when permitted by admin)
-                          if (auth.hasTrackBearingAccess) ...[
-                            _buildTrackBearingCard(),
-                            const SizedBox(height: AppDimensions.spaceSm),
-                          ],
-
-                          // 3. WARRANTY MODULE (Only visible when permitted by admin)
-                          if (auth.hasWarrantyAccess) ...[
-                            _buildWarrantyInOutCard(),
-                            const SizedBox(height: AppDimensions.spaceSm),
-                            _buildWarrantyHistoryCard(loc),
-                            const SizedBox(height: AppDimensions.spaceSm),
-                          ],
 
                           const Spacer(),
                           const SizedBox(height: AppDimensions.spaceSm),
@@ -351,66 +346,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     );
   }
 
-  /// Bearing Authentication Card - Unconditionally available for all users
-  Widget _buildAuthenticationCard() {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        side: const BorderSide(color: Color(0xFF0D8A4E), width: 1.8),
-      ),
-      child: InkWell(
-        mouseCursor: SystemMouseCursors.click,
-        onTap: () => _safeNavigate(AppRoutes.bearingAuthentication),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F5E9),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF0D8A4E), width: 1.5),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.verified_user_rounded,
-                    color: Color(0xFF0D8A4E),
-                    size: 24,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'AUTHENTICATE BEARING',
-                  style: AppTypography.labelMd.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF1B5E20),
-                    letterSpacing: 0.5,
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: Color(0xFF0D8A4E),
-                size: 16,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Track Your Bearing Card - Role Protected
-  Widget _buildTrackBearingCard() {
+  /// Reward Points Wallet Card
+  Widget _buildRewardWalletCard() {
     return Material(
       color: Colors.white,
       shape: RoundedRectangleBorder(
@@ -419,7 +356,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       ),
       child: InkWell(
         mouseCursor: SystemMouseCursors.click,
-        onTap: () => _safeNavigate(AppRoutes.trackBearing),
+        onTap: () => _safeNavigate(AppRoutes.rewardWallet),
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -435,7 +372,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 ),
                 child: const Center(
                   child: Icon(
-                    Icons.sync_alt_rounded,
+                    Icons.stars_rounded,
                     color: AppColors.primary,
                     size: 24,
                   ),
@@ -443,18 +380,50 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'TRACK YOUR BEARING',
-                  style: AppTypography.labelMd.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.primary,
-                    letterSpacing: 0.5,
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'REWARD POINTS WALLET',
+                      style: AppTypography.labelMd.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primary,
+                        letterSpacing: 0.5,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_rewardProfile.currentBalancePoints} Points  •  ₹${_rewardProfile.currentBalanceInr.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _rewardProfile.isRewardEligible
+                      ? _rewardProfile.rateDisplayString
+                      : 'STANDARD MODE',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               const Icon(
                 Icons.arrow_forward_ios_rounded,
                 color: AppColors.primary,
@@ -467,121 +436,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     );
   }
 
-  /// Warranty Bearing In & Out Card (Scan QR, upload proof & assign warranty)
-  Widget _buildWarrantyInOutCard() {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        side: const BorderSide(color: AppColors.primary, width: 1.8),
-      ),
-      child: InkWell(
-        mouseCursor: SystemMouseCursors.click,
-        onTap: () => _safeNavigate(AppRoutes.qrScanner),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary, width: 1.5),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.camera_alt_outlined,
-                    color: AppColors.primary,
-                    size: 22,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'BEARING IN / OUT (WARRANTY)',
-                  style: AppTypography.labelMd.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.primary,
-                    letterSpacing: 0.5,
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: AppColors.primary,
-                size: 16,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
-  /// Warranty Products & History Card
-  Widget _buildWarrantyHistoryCard(AppLocalizations loc) {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        side: const BorderSide(color: AppColors.primary, width: 1.8),
-      ),
-      child: InkWell(
-        mouseCursor: SystemMouseCursors.click,
-        onTap: () => _safeNavigate(AppRoutes.warrantyCheck),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary, width: 1.5),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.shield_outlined,
-                    color: AppColors.primary,
-                    size: 24,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'WARRANTY CHECK & PRODUCTS',
-                  style: AppTypography.labelMd.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.primary,
-                    letterSpacing: 0.5,
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: AppColors.primary,
-                size: 16,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   /// Dynamic Bottom Navigation Bar that automatically adjusts based on active modules
   Widget _buildBottomNav(AppLocalizations loc) {

@@ -1092,6 +1092,12 @@ class QrManagementRepository {
 
   List<Map<String, dynamic>> _defaultWarrantyPlans() => [
     {
+      'id': '00000000-0000-0000-0000-000000000000',
+      'plan_code': 'WP-0M',
+      'title': '0 Month Warranty',
+      'duration_months': 0,
+    },
+    {
       'id': '11111111-1111-1111-1111-111111111111',
       'plan_code': 'WP-3M',
       'title': '3 Months Standard Warranty',

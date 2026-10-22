@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/config/app_config.dart';
 import '../models/bearing_model.dart';
@@ -8,6 +9,7 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 import '../../domain/services/warranty_calculator.dart';
+import '../../../rewards/data/services/reward_service.dart';
 
 abstract class BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload);
@@ -46,6 +48,23 @@ class BearingRepositoryImpl implements BearingRepository {
   /// Authoritative server-side verification using Supabase `verify_bearing_qr` RPC
   @override
   Future<QrVerificationResult> verifyScannedPayload(String payload) async {
+    final res = await _verifyScannedPayloadInternal(payload);
+    if (res.status == QrVerificationStatus.validNotActivated ||
+        res.status == QrVerificationStatus.validWarrantyActive) {
+      try {
+        final reward = await RewardService.claimBearingScanReward(
+          rawPayloadOrId: payload,
+          sourceModule: 'WARRANTY_FLOW',
+        );
+        return res.copyWithReward(reward);
+      } catch (e) {
+        debugPrint('Warranty verification reward hook error: $e');
+      }
+    }
+    return res;
+  }
+
+  Future<QrVerificationResult> _verifyScannedPayloadInternal(String payload) async {
     _totalScansCount++;
     final cleanPayload = payload.trim();
     if (cleanPayload.isEmpty) {

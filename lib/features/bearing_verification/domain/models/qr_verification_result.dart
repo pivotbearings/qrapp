@@ -1,4 +1,5 @@
 import '../services/warranty_calculator.dart';
+import '../../../rewards/domain/models/reward_models.dart';
 
 /// Clear verification states returned by the authoritative backend
 enum QrVerificationStatus {
@@ -42,6 +43,7 @@ class QrVerificationResult {
   final bool canMarkOut;
   final String? payloadHash;
   final String? errorMessage;
+  final RewardClaimResult? rewardClaim;
 
   const QrVerificationResult({
     required this.status,
@@ -60,7 +62,30 @@ class QrVerificationResult {
     this.canMarkOut = false,
     this.payloadHash,
     this.errorMessage,
+    this.rewardClaim,
   });
+
+  QrVerificationResult copyWithReward(RewardClaimResult? claim) {
+    return QrVerificationResult(
+      status: status,
+      bearingId: bearingId,
+      batchCode: batchCode,
+      plantLocation: plantLocation,
+      modelNumber: modelNumber,
+      warrantyPlanTitle: warrantyPlanTitle,
+      warrantyDurationMonths: warrantyDurationMonths,
+      currentLifecycleState: currentLifecycleState,
+      firstInTimestamp: firstInTimestamp,
+      warrantyExpiryTimestamp: warrantyExpiryTimestamp,
+      isExpired: isExpired,
+      flagReason: flagReason,
+      canMarkIn: canMarkIn,
+      canMarkOut: canMarkOut,
+      payloadHash: payloadHash,
+      errorMessage: errorMessage,
+      rewardClaim: claim ?? rewardClaim,
+    );
+  }
 
   factory QrVerificationResult.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['verification_status']?.toString() ?? json['status']?.toString();

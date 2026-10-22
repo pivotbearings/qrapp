@@ -9,7 +9,14 @@ import 'app_colors.dart';
 abstract class AppTypography {
   static const String fontFamily = 'NeueHaas';
   static const String rupeeFontFamily = 'Parkinsans';
-  static const List<String> fontFamilyFallback = ['Parkinsans', 'Inter', 'Roboto', 'Arial', 'sans-serif'];
+  static const List<String> fontFamilyFallback = [
+    'Inter',
+    'Roboto',
+    'Segoe UI',
+    'Arial',
+    'sans-serif',
+    'Parkinsans',
+  ];
 
   /// Dedicated TextStyle for the Indian Rupee symbol ('₹') using Parkinsans font
   static TextStyle rupee({

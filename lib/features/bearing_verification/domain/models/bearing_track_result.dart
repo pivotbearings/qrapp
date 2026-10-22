@@ -1,4 +1,7 @@
 /// Pivot Bearings India - Historical Cycle Record
+library;
+
+import '../../../rewards/domain/models/reward_models.dart';
 class BearingCycleRecord {
   final int cycleNumber;
   final DateTime inTimestamp;
@@ -69,6 +72,7 @@ class BearingTrackResult {
   final String? notes;
   final List<BearingCycleRecord> lifecycleHistory;
   final String? rawPayload;
+  final RewardClaimResult? rewardClaim;
 
   const BearingTrackResult({
     required this.isValid,
@@ -88,7 +92,31 @@ class BearingTrackResult {
     this.notes,
     this.lifecycleHistory = const [],
     this.rawPayload,
+    this.rewardClaim,
   });
+
+  BearingTrackResult copyWithReward(RewardClaimResult? claim) {
+    return BearingTrackResult(
+      isValid: isValid,
+      action: action,
+      bearingId: bearingId,
+      modelNumber: modelNumber,
+      batchCode: batchCode,
+      plantLocation: plantLocation,
+      cycleNumber: cycleNumber,
+      inTimestamp: inTimestamp,
+      outTimestamp: outTimestamp,
+      durationSeconds: durationSeconds,
+      durationDays: durationDays,
+      durationHours: durationHours,
+      durationMinutes: durationMinutes,
+      message: message,
+      notes: notes,
+      lifecycleHistory: lifecycleHistory,
+      rawPayload: rawPayload,
+      rewardClaim: claim ?? rewardClaim,
+    );
+  }
 
   bool get isBearingIn => isValid && action == 'BEARING_IN';
   bool get isBearingOut => isValid && action == 'BEARING_OUT';

@@ -12,6 +12,7 @@ import '../../../../core/widgets/industrial_status_badge.dart';
 import '../../../../core/widgets/industrial_text_field.dart';
 import '../../../bearing_verification/data/repositories/bearing_repository.dart';
 import '../../../bearing_verification/domain/models/qr_verification_result.dart';
+import '../../../../core/widgets/app_snack_bar.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -95,6 +96,18 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     try {
       final result = await _bearingRepository.verifyScannedPayload(payload);
       if (!mounted) return;
+
+      if (result.rewardClaim?.rewardAwarded == true) {
+        AppSnackBar.showSuccess(
+          context,
+          '🎉 1st Scan Reward: +${result.rewardClaim!.pointsEarned} Points (≈ ₹${result.rewardClaim!.amountInr.toStringAsFixed(2)}) Credited!',
+        );
+      } else if (result.rewardClaim?.isUserBlocked == true) {
+        AppSnackBar.showInfo(
+          context,
+          'Bearing verified authentic. Account is in standard mode without promotional reward points.',
+        );
+      }
 
       final isDecommissioned = result.status == QrVerificationStatus.decommissionedOut ||
           result.currentLifecycleState == 'CURRENTLY_OUT' ||

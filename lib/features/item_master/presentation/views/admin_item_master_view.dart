@@ -732,7 +732,9 @@ class _AdminItemMasterViewState extends State<AdminItemMasterView> {
                                       Expanded(
                                         flex: 2,
                                         child: Text(
-                                          '${item.defaultWarrantyMonths} Months',
+                                          item.defaultWarrantyMonths == 0
+                                              ? '0 Months (No Warranty)'
+                                              : '${item.defaultWarrantyMonths} Months',
                                           style: AppTypography.bodySm.copyWith(fontWeight: FontWeight.bold),
                                         ),
                                       ),

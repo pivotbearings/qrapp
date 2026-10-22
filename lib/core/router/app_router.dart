@@ -21,6 +21,7 @@ import '../../features/qr_generation/presentation/screens/qr_bulk_generation_scr
 import '../../features/qr_inventory/presentation/screens/qr_inventory_screen.dart';
 import '../../features/qr_scanner/presentation/screens/qr_scanner_screen.dart';
 import '../../features/warranty_check/presentation/screens/warranty_check_screen.dart';
+import '../../features/rewards/presentation/screens/reward_wallet_screen.dart';
 import 'app_routes.dart';
 
 class AppRouter {
@@ -278,6 +279,12 @@ class AppRouter {
         }
         final initialId = (settings.arguments as String?);
         return MaterialPageRoute(builder: (_) => WarrantyCheckScreen(initialBearingId: initialId));
+
+      case AppRoutes.rewardWallet:
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        return MaterialPageRoute(builder: (_) => const RewardWalletScreen());
 
       default:
         return MaterialPageRoute(

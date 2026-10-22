@@ -35,6 +35,7 @@ class ItemSelectionDialog extends StatefulWidget {
 class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
   final ItemMasterRepository _repo = ItemMasterRepository();
   final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _listScrollController = ScrollController();
 
   int _currentPage = 1;
   static const int _pageSize = 10;
@@ -60,6 +61,7 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _listScrollController.dispose();
     super.dispose();
   }
 
@@ -419,8 +421,10 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
                       ),
                     )
                   : Scrollbar(
+                      controller: _listScrollController,
                       thumbVisibility: true,
                       child: ListView.separated(
+                        controller: _listScrollController,
                         padding: const EdgeInsets.only(top: 4, bottom: 4, right: 6),
                         itemCount: paginated.items.length,
                         separatorBuilder: (context, index) => const SizedBox(height: 8),

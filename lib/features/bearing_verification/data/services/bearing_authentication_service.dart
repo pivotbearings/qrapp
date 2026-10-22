@@ -5,6 +5,8 @@ import '../../../../core/auth/auth_controller.dart';
 import '../../domain/models/bearing_authentication_result.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
 
+import '../../../rewards/data/services/reward_service.dart';
+
 /// Pivot Bearings India - Authoritative Bearing Authentication Service
 ///
 /// Ensures accurate, consistent scan tracking across users and devices:
@@ -12,6 +14,7 @@ import '../../../qr_generation/domain/services/bearing_encryption_key_service.da
 /// 2. Direct table fallback with atomic scan count increment
 /// 3. Offline persistent storage fallback for testing & local resilience
 /// 4. Strict enforcement: Never identifies an unregistered code as genuine.
+/// 5. Automatically claims 1st-scan reward points across modules.
 class BearingAuthenticationService {
   static const String _localScanCountPrefix = 'pbi_scan_count_';
   static const String _localFirstScanPrefix = 'pbi_first_scan_';
@@ -29,8 +32,24 @@ class BearingAuthenticationService {
     return id;
   }
 
-  /// Primary Authentication Pipeline
+  /// Primary Authentication Pipeline with 1st-Scan Reward Hook
   static Future<BearingAuthenticationResult> authenticateBearing(String rawPayload) async {
+    final res = await _authenticateBearingInternal(rawPayload);
+    if (res.isAuthentic && !res.isAlreadyOut) {
+      try {
+        final reward = await RewardService.claimBearingScanReward(
+          rawPayloadOrId: rawPayload,
+          sourceModule: 'AUTHENTICATE_BEARING',
+        );
+        return res.copyWithReward(reward);
+      } catch (e) {
+        debugPrint('Authentication reward hook error: $e');
+      }
+    }
+    return res;
+  }
+
+  static Future<BearingAuthenticationResult> _authenticateBearingInternal(String rawPayload) async {
     final cleanPayload = rawPayload.trim();
     if (cleanPayload.isEmpty) {
       return BearingAuthenticationResult.invalid(

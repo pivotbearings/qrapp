@@ -11,7 +11,6 @@ import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/industrial_card.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
-import '../../../admin_dashboard/presentation/widgets/admin_view_header.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 
 class QrInventoryScreen extends StatefulWidget {
@@ -401,23 +400,15 @@ class _QrInventoryScreenState extends State<QrInventoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Expanded(child: AdminViewHeader(title: 'QR Registry & Generated Files')),
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
-                    tooltip: 'Refresh Files List',
-                    onPressed: _loadData,
-                  ),
-                ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
+                  tooltip: 'Refresh Files List',
+                  onPressed: _loadData,
+                ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Generated QR batch files with exact generation date & time. Download clean single-column QR files ready for laser marking and industrial operations.',
-                style: AppTypography.caption.copyWith(color: Colors.black87),
-              ),
-              const SizedBox(height: AppDimensions.spaceMd),
+              const SizedBox(height: AppDimensions.spaceSm),
 
               // Filter, Search, and Action Header
               Container(

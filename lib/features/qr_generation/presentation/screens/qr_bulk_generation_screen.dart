@@ -12,7 +12,6 @@ import '../../data/repositories/qr_management_repository.dart';
 import '../../../item_master/data/models/bearing_item_model.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
 import '../../../item_master/presentation/widgets/item_selection_dialog.dart';
-import '../../../admin_dashboard/presentation/widgets/admin_view_header.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 
 class QrBulkGenerationScreen extends StatefulWidget {
@@ -107,9 +106,9 @@ class _QrBulkGenerationScreenState extends State<QrBulkGenerationScreen> {
 
     if (_isCustomWarranty) {
       final customMonths = int.tryParse(_customMonthsCtrl.text.trim()) ?? 0;
-      if (customMonths <= 0 || customMonths > 240) {
+      if (customMonths < 0 || customMonths > 240) {
         setState(() {
-          _errorMessage = 'Custom warranty duration must be between 1 and 240 months.';
+          _errorMessage = 'Custom warranty duration must be between 0 and 240 months.';
         });
         return;
       }
@@ -221,8 +220,6 @@ class _QrBulkGenerationScreenState extends State<QrBulkGenerationScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const AdminViewHeader(title: 'QR Generation'),
-
               if (_errorMessage != null) ...[
                 Container(
                   width: double.infinity,
@@ -399,6 +396,7 @@ class _QrBulkGenerationScreenState extends State<QrBulkGenerationScreen> {
                           borderRadius: BorderRadius.circular(24),
                           dropdownColor: AppColors.background,
                           items: const [
+                            DropdownMenuItem(value: '0', child: Text('0 Month Warranty (0M)', style: AppTypography.bodySm)),
                             DropdownMenuItem(value: '3', child: Text('3 Months Standard Warranty (3M)', style: AppTypography.bodySm)),
                             DropdownMenuItem(value: '6', child: Text('6 Months Heavy Duty Warranty (6M)', style: AppTypography.bodySm)),
                             DropdownMenuItem(value: '12', child: Text('12 Months Industrial Warranty (12M)', style: AppTypography.bodySm)),
@@ -453,7 +451,7 @@ class _QrBulkGenerationScreenState extends State<QrBulkGenerationScreen> {
                                 const SizedBox(height: 10),
                                 Wrap(
                                   spacing: 6,
-                                  children: [1, 2, 9, 15, 30, 48, 60].map((m) {
+                                  children: [0, 1, 2, 3, 6, 9, 12, 15, 24, 36, 48, 60].map((m) {
                                     return InkWell(
                                       onTap: () {
                                         setState(() {

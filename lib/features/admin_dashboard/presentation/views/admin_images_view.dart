@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/widgets/industrial_button.dart';
+import '../../../../core/widgets/industrial_text_field.dart';
 import '../widgets/admin_view_header.dart';
 
 class AdminImagesView extends StatefulWidget {
@@ -19,24 +19,15 @@ class _AdminImagesViewState extends State<AdminImagesView> {
   List<Map<String, dynamic>> _images = [];
   bool _isLoading = true;
   String? _errorMessage;
-  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadImages();
-
-    // Auto-poll every 6 seconds so newly captured proofs appear dynamically
-    _refreshTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (mounted && !_isLoading) {
-        _loadImages(silent: true);
-      }
-    });
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -218,33 +209,20 @@ class _AdminImagesViewState extends State<AdminImagesView> {
               const SizedBox(height: 12),
 
               // QR Value Search Bar with Realtime Count
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                  border: Border.all(color: AppColors.primary, width: 1.2),
-                ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'Search by QR Value, Bearing Serial, or Hash...',
-                    hintStyle: const TextStyle(fontSize: 12, color: Colors.black45),
-                    prefixIcon: const Icon(Icons.qr_code_scanner, color: AppColors.primary, size: 20),
-                    suffixIcon: _searchCtrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 18, color: AppColors.primary),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() {});
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  ),
-                ),
+              IndustrialTextField(
+                controller: _searchCtrl,
+                hintText: 'Search by QR Value, Bearing Serial, or Hash...',
+                prefixIcon: const Icon(Icons.qr_code_scanner, color: AppColors.primary, size: 20),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18, color: AppColors.primary),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                onChanged: (_) => setState(() {}),
               ),
 
               if (_searchCtrl.text.isNotEmpty) ...[

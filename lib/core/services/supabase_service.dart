@@ -568,6 +568,8 @@ class SupabaseService {
     }
   }
 
+  static final Map<String, ({String url, DateTime expiresAt})> _signedUrlCache = {};
+
   /// Fetches verification images with authorized signed URLs
   static Future<List<Map<String, dynamic>>> fetchVerificationImages({int limit = 20, int offset = 0}) async {
     if (!_isInitialized) return [];
@@ -593,23 +595,33 @@ class SupabaseService {
       for (final img in images) {
         final map = Map<String, dynamic>.from(img);
         final storagePath = map['storage_path']?.toString();
-        if (storagePath != null) {
-          try {
-            var signedUrl = await client.storage
-                .from('verification-images')
-                .createSignedUrl(storagePath, 3600);
-            if (AppConfig.storageCdnUrl != null &&
-                AppConfig.storageCdnUrl!.isNotEmpty) {
-              final originUri = Uri.parse(signedUrl);
-              final cdnUri = Uri.parse(AppConfig.storageCdnUrl!);
-              signedUrl = originUri.replace(
-                scheme: cdnUri.scheme,
-                host: cdnUri.host,
-                port: cdnUri.hasPort ? cdnUri.port : null,
-              ).toString();
-            }
-            map['signed_url'] = signedUrl;
-          } catch (_) {}
+        if (storagePath != null && storagePath.isNotEmpty) {
+          // Check if valid cached URL exists
+          final cached = _signedUrlCache[storagePath];
+          if (cached != null && cached.expiresAt.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
+            map['signed_url'] = cached.url;
+          } else {
+            try {
+              var signedUrl = await client.storage
+                  .from('verification-images')
+                  .createSignedUrl(storagePath, 3600);
+              if (AppConfig.storageCdnUrl != null &&
+                  AppConfig.storageCdnUrl!.isNotEmpty) {
+                final originUri = Uri.parse(signedUrl);
+                final cdnUri = Uri.parse(AppConfig.storageCdnUrl!);
+                signedUrl = originUri.replace(
+                  scheme: cdnUri.scheme,
+                  host: cdnUri.host,
+                  port: cdnUri.hasPort ? cdnUri.port : null,
+                ).toString();
+              }
+              _signedUrlCache[storagePath] = (
+                url: signedUrl,
+                expiresAt: DateTime.now().add(const Duration(seconds: 3500)),
+              );
+              map['signed_url'] = signedUrl;
+            } catch (_) {}
+          }
         }
         enriched.add(map);
       }
@@ -637,7 +649,7 @@ class SupabaseService {
           // Guarantee that module permissions, authorised numbers, and phone are never omitted
           // if an older version of the RPC stored procedure is active on the Supabase project
           try {
-            final profiles = await client.from('profiles').select('id, phone, has_warranty_access, has_track_bearing_access, authorised_numbers');
+            final profiles = await client.from('profiles').select('id, phone, has_warranty_access, has_track_bearing_access, is_reward_eligible, authorised_numbers');
             final Map<String, Map<String, dynamic>> profMap = {
               for (final p in profiles) (p['id']?.toString() ?? ''): Map<String, dynamic>.from(p)
             };
@@ -647,6 +659,7 @@ class SupabaseService {
               if (p != null) {
                 u['has_warranty_access'] = p['has_warranty_access'] == true;
                 u['has_track_bearing_access'] = p['has_track_bearing_access'] == true;
+                u['is_reward_eligible'] = p['is_reward_eligible'] != false;
                 if (p['authorised_numbers'] != null) {
                   u['authorised_numbers'] = (p['authorised_numbers'] as List<dynamic>?)
                       ?.map((e) => e.toString())
@@ -710,6 +723,7 @@ class SupabaseService {
           'is_active': p['is_active'] != false,
           'has_warranty_access': p['has_warranty_access'] == true,
           'has_track_bearing_access': p['has_track_bearing_access'] == true,
+          'is_reward_eligible': p['is_reward_eligible'] != false,
           'authorised_numbers': (p['authorised_numbers'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
@@ -825,6 +839,90 @@ class SupabaseService {
       hasTrackBearing: hasTrackBearing,
     );
     return true;
+  }
+
+  /// Updates user reward points eligibility (Toggle ON/OFF from Customers page)
+  static Future<bool> updateUserRewardEligibility({
+    required String userId,
+    required bool isEligible,
+    String? email,
+  }) async {
+    if (_isInitialized) {
+      // 1. Try authoritative RPC admin_update_user_reward_eligibility
+      try {
+        await client.rpc('admin_update_user_reward_eligibility', params: {
+          'p_target_user_id': userId,
+          'p_is_eligible': isEligible,
+        });
+        await _updateOfflineUserRewardEligibility(
+          userId: userId,
+          email: email,
+          isEligible: isEligible,
+        );
+        return true;
+      } catch (_) {}
+
+      // 2. Direct table update fallback
+      try {
+        await client.from('profiles').update({
+          'is_reward_eligible': isEligible,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', userId);
+
+        try {
+          await client.from('user_reward_wallets').update({
+            'is_frozen': !isEligible,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('user_id', userId);
+        } catch (_) {}
+
+        await _updateOfflineUserRewardEligibility(
+          userId: userId,
+          email: email,
+          isEligible: isEligible,
+        );
+        return true;
+      } catch (e) {
+        debugPrint('Notice: direct profiles is_reward_eligible update: $e');
+      }
+    }
+
+    await _updateOfflineUserRewardEligibility(
+      userId: userId,
+      email: email,
+      isEligible: isEligible,
+    );
+    return true;
+  }
+
+  static Future<void> _updateOfflineUserRewardEligibility({
+    required String userId,
+    String? email,
+    required bool isEligible,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (email != null && email.isNotEmpty) {
+        await prefs.setBool('offline_reward_eligible_$email', isEligible);
+      }
+
+      final raw = prefs.getString('registered_offline_users_json');
+      List<Map<String, dynamic>> users = [];
+      if (raw != null) {
+        try {
+          users = List<Map<String, dynamic>>.from(jsonDecode(raw));
+        } catch (_) {}
+      }
+
+      for (final u in users) {
+        if (u['id'] == userId || (email != null && u['email'] == email)) {
+          u['is_reward_eligible'] = isEligible;
+          break;
+        }
+      }
+
+      await prefs.setString('registered_offline_users_json', jsonEncode(users));
+    } catch (_) {}
   }
 
   /// Updates user's configured authorised person numbers (up to 10 numbers)
@@ -1021,6 +1119,12 @@ class SupabaseService {
                     ?.map((e) => e.toString())
                     .toList() ??
                 <String>[];
+          }
+          final savedRewardEligible = prefs.getBool('offline_reward_eligible_$email');
+          if (savedRewardEligible != null) {
+            u['is_reward_eligible'] = savedRewardEligible;
+          } else {
+            u['is_reward_eligible'] = (u['is_reward_eligible'] != false);
           }
         }
       }
