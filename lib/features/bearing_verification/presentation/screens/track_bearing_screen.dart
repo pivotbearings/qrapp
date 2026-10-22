@@ -1400,19 +1400,23 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: AppColors.primary,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        border: Border.all(color: AppColors.primary, width: 2.0),
+        border: Border.all(color: AppColors.primary, width: 1.8),
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.background,
               shape: BoxShape.circle,
+              border: Border.all(color: AppColors.primary, width: 1.5),
             ),
-            child: const Icon(Icons.stars_rounded, color: AppColors.primary, size: 28),
+            child: const Center(
+              child: Icon(Icons.stars_rounded, color: AppColors.primary, size: 26),
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -1420,30 +1424,32 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '🎉 1ST SCAN REWARD CLAIMED!',
+                  '1ST SCAN REWARD CLAIMED!',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.primary,
                     fontWeight: FontWeight.w900,
-                    fontSize: 13,
+                    fontSize: 12,
                     letterSpacing: 0.5,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '+${claim.pointsEarned} Points (≈ ₹${claim.amountInr.toStringAsFixed(2)}) Credited',
+                  '+${claim.pointsEarned} Points Credited!',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppColors.primary,
                     fontWeight: FontWeight.w900,
-                    fontSize: 14,
+                    fontSize: 16,
                   ),
                 ),
-                if (claim.rateDisplay.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Program Rate: ${claim.rateDisplay}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                const SizedBox(height: 2),
+                Text(
+                  'Points added to your Pivot Reward Wallet.',
+                  style: TextStyle(
+                    color: AppColors.primary.withValues(alpha: 0.75),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
+                ),
               ],
             ),
           ),

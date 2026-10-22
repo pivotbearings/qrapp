@@ -183,7 +183,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Row: Label & Active Conversion Rate
+          // Top Row: Label & Active Status
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -209,29 +209,31 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  _profile.rateDisplayString,
+                  _profile.isRewardEligible ? 'ACTIVE WALLET' : 'STANDARD ACCOUNT',
                   style: const TextStyle(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w900,
-                    fontSize: 11,
+                    fontSize: 10.5,
+                    letterSpacing: 0.4,
                   ),
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
           // Main Balance
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
                 '${_profile.currentBalancePoints}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
-                  fontSize: 42,
+                  fontSize: 44,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -241,29 +243,13 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.8),
                   fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '≈ ₹${_profile.currentBalanceInr.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
+                  fontSize: 18,
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
           // Secondary Statistics Grid
           Container(
@@ -282,8 +268,8 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
                       Text('In Payout Review', style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 10, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(
-                        '${_profile.pendingRedemptionPoints} pts (₹${_profile.pendingRedemptionInr.toStringAsFixed(2)})',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        '${_profile.pendingRedemptionPoints} pts',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ],
                   ),
@@ -298,7 +284,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
                       const SizedBox(height: 2),
                       Text(
                         '${_profile.totalPointsRedeemed} pts',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ],
                   ),
@@ -652,22 +638,13 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${t.isCredit ? "+" : ""}${t.points} pts',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 13,
-                      color: t.isCredit ? const Color(0xFF0D8A4E) : const Color(0xFFD32F2F),
-                    ),
-                  ),
-                  Text(
-                    '₹${t.amountInr.toStringAsFixed(2)}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54),
-                  ),
-                ],
+              Text(
+                '${t.isCredit ? "+" : ""}${t.points} pts',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                  color: t.isCredit ? const Color(0xFF0D8A4E) : const Color(0xFFD32F2F),
+                ),
               ),
             ],
           ),

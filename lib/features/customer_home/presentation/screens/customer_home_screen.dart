@@ -395,7 +395,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${_rewardProfile.currentBalancePoints} Points  •  ₹${_rewardProfile.currentBalanceInr.toStringAsFixed(2)}',
+                      '${_rewardProfile.currentBalancePoints} Points',
                       style: const TextStyle(
                         color: AppColors.primary,
                         fontSize: 14,
@@ -412,14 +412,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                   color: AppColors.primary,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(
-                  _rewardProfile.isRewardEligible
-                      ? _rewardProfile.rateDisplayString
-                      : 'STANDARD MODE',
-                  style: const TextStyle(
+                child: const Text(
+                  'VIEW WALLET',
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.4,
                   ),
                 ),
               ),

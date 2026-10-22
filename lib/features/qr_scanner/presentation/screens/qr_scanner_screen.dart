@@ -100,7 +100,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       if (result.rewardClaim?.rewardAwarded == true) {
         AppSnackBar.showSuccess(
           context,
-          '🎉 1st Scan Reward: +${result.rewardClaim!.pointsEarned} Points (≈ ₹${result.rewardClaim!.amountInr.toStringAsFixed(2)}) Credited!',
+          '🎉 1st Scan Reward: +${result.rewardClaim!.pointsEarned} Points Credited!',
         );
       } else if (result.rewardClaim?.isUserBlocked == true) {
         AppSnackBar.showInfo(

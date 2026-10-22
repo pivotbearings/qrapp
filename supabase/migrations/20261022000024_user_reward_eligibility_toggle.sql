@@ -353,7 +353,7 @@ begin
     'amount_inr', v_amount_inr,
     'rate_display', v_base_unit || ' Points = ₹' || trim(to_char(v_inr_per_base, '999999990.00')),
     'new_balance', v_new_balance,
-    'message', 'Congratulations! 1st scan reward of ' || v_pts || ' points (₹' || v_amount_inr || ') credited to your wallet.'
+    'message', 'Congratulations! 1st scan reward of ' || v_pts || ' points credited to your wallet.'
   );
 end;
 $$ language plpgsql security definer;
