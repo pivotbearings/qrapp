@@ -41,6 +41,7 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
   String? _uploadedFileSizeKb;
   String _simulatedDevice = 'standard'; // 'compact', 'standard', 'wide'
   bool _isSavingBanner = false;
+  bool _isUploadingBanner = false;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -149,40 +150,62 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
     return u;
   }
 
-  /// Handles picking and validating a WebP banner from user storage
+  /// Handles picking and validating a banner from user storage, then auto-publishing in real-time
   Future<void> _pickWebPFile() async {
     try {
       if (kIsWeb) {
         final picked = await WebImagePicker.pickImage();
         if (picked == null) return;
 
+        setState(() => _isUploadingBanner = true);
+
         final bytes = picked.bytes;
         final isWebP = AdBannerService.isWebPBytes(bytes) ||
             picked.name.toLowerCase().endsWith('.webp');
-        final base64Str = base64Encode(bytes);
         final mimeType = isWebP ? 'image/webp' : picked.mimeType;
 
+        // Upload binary to Supabase Storage (with fallback to data URI)
+        final uploadedSource = await AdBannerService.uploadBannerBinary(
+          bytes: bytes,
+          filename: picked.name,
+          mimeType: mimeType,
+        );
+
+        final newConfig = AdBannerConfig(
+          image: uploadedSource,
+          targetUrl: _adBannerLinkCtrl.text.trim().isNotEmpty
+              ? _adBannerLinkCtrl.text.trim()
+              : 'https://www.pivotbearingsindia.com/',
+          isActive: _adBannerActive,
+          format: isWebP ? 'webp' : 'image',
+          fitMode: _adBannerFitMode,
+        );
+
+        // Auto-save and broadcast in real-time to all connected customer home screens
+        await AdBannerService.saveBannerConfig(newConfig);
+
         setState(() {
-          _adBannerImage = 'data:$mimeType;base64,$base64Str';
+          _adBannerImage = uploadedSource;
           _isAdBannerWebPValid = isWebP;
           _uploadedFileName = picked.name;
           _uploadedFileSizeKb = (bytes.lengthInBytes / 1024).toStringAsFixed(1);
           _adBannerUrlCtrl.clear();
+          _isUploadingBanner = false;
         });
 
         if (mounted) {
-          if (isWebP) {
-            AppSnackBar.showSuccess(context, 'WebP image loaded and verified successfully.');
-          } else {
-            AppSnackBar.showInfo(context, 'Image loaded. Note: WebP format is strongly recommended for best mobile performance.');
-          }
+          AppSnackBar.showSuccess(
+            context,
+            'BANNER UPLOADED & REFLECTING LIVE IN REAL-TIME!',
+          );
         }
       } else {
         AppSnackBar.showInfo(context, 'On mobile, please configure the banner using the Image URL field below.');
       }
     } catch (e) {
       if (mounted) {
-        AppSnackBar.showError(context, 'File picker error: $e');
+        setState(() => _isUploadingBanner = false);
+        AppSnackBar.showError(context, 'Upload error: $e');
       }
     }
   }
@@ -616,7 +639,11 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
                         : _simulatedDevice == 'wide'
                             ? 480
                             : 375,
-                    height: 220,
+                    height: _simulatedDevice == 'compact'
+                        ? 152
+                        : _simulatedDevice == 'wide'
+                            ? 228
+                            : 178,
                     decoration: BoxDecoration(
                       color: const Color(0xFF001F59),
                       borderRadius: BorderRadius.circular(16),
@@ -668,7 +695,7 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
                 const SizedBox(height: 10),
                 Center(
                   child: Text(
-                    'Simulating ${_simulatedDevice.toUpperCase()} screen size — banner is scaled via ${_adBannerFitMode.toUpperCase()} to prevent cutoff or distortion.',
+                    'Simulating ${_simulatedDevice.toUpperCase()} screen size (2.1:1 proper ratio) — banner is scaled via ${_adBannerFitMode.toUpperCase()} to prevent cutoff or distortion.',
                     style: const TextStyle(fontSize: 11, color: Colors.black54, fontStyle: FontStyle.italic),
                   ),
                 ),
@@ -685,18 +712,52 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Proper Dimension Notice Box
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F4FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFC7D7FE), width: 1),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.aspect_ratio_rounded, size: 20, color: AppColors.primary),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'PROPER DIMENSIONS: 1200 x 570 px (~2.1:1 ratio) or 1200 x 600 px (2:1). Formats: WebP, PNG, JPG. Updates reflect on customer home screens live in real-time.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E3A8A),
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                   Row(
                     children: [
                       ElevatedButton.icon(
-                        icon: const Icon(Icons.upload_file, size: 18),
-                        label: const Text('UPLOAD WEBP IMAGE FILE'),
+                        icon: _isUploadingBanner
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Icon(Icons.upload_file, size: 18),
+                        label: Text(_isUploadingBanner ? 'UPLOADING & BROADCASTING...' : 'UPLOAD IMAGE FILE'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: _pickWebPFile,
+                        onPressed: _isUploadingBanner ? null : _pickWebPFile,
                       ),
                       const SizedBox(width: 12),
                       OutlinedButton.icon(

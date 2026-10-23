@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1260,13 +1261,28 @@ class AdBannerConfig {
   }
 }
 
-/// Service managing advertisement banner synchronization and caching
+/// Service managing advertisement banner synchronization, caching and realtime updates
 class AdBannerService {
   static const String _prefKey = 'pivot_home_ad_banner_v1';
   static const String _supabaseKey = 'home_ad_banner';
 
   static AdBannerConfig _memoryCache = AdBannerConfig.defaultConfig();
   static bool _hasLoaded = false;
+
+  static final StreamController<AdBannerConfig> _bannerUpdatesController =
+      StreamController<AdBannerConfig>.broadcast();
+
+  /// Realtime stream that emits immediately whenever the ad banner is modified
+  static Stream<AdBannerConfig> get onBannerConfigChanged => _bannerUpdatesController.stream;
+
+  /// Notifies all active in-app listeners that the ad banner config has updated
+  static void notifyBannerUpdated(AdBannerConfig config) {
+    _memoryCache = config;
+    _hasLoaded = true;
+    if (!_bannerUpdatesController.isClosed) {
+      _bannerUpdatesController.add(config);
+    }
+  }
 
   /// In-memory cache for fast, non-blocking UI reads
   static AdBannerConfig get currentConfig => _memoryCache;
@@ -1277,6 +1293,42 @@ class AdBannerService {
     final isRiff = bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46;
     final isWebP = bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
     return isRiff && isWebP;
+  }
+
+  /// Uploads banner binary to Supabase Storage and returns public URL if available,
+  /// otherwise returns optimized base64 Data URI fallback.
+  static Future<String> uploadBannerBinary({
+    required Uint8List bytes,
+    required String filename,
+    required String mimeType,
+  }) async {
+    if (SupabaseService.isInitialized) {
+      try {
+        final client = SupabaseService.client;
+        final cleanExt = filename.contains('.') ? filename.split('.').last.toLowerCase() : 'webp';
+        final storagePath = 'ad_banners/banner_${DateTime.now().millisecondsSinceEpoch}.$cleanExt';
+
+        await client.storage.from('verification-images').uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: mimeType,
+            upsert: true,
+          ),
+        );
+
+        final publicUrl = client.storage.from('verification-images').getPublicUrl(storagePath);
+        if (publicUrl.isNotEmpty) {
+          return publicUrl;
+        }
+      } catch (e) {
+        debugPrint('Supabase storage banner upload fallback: $e');
+      }
+    }
+
+    // Direct base64 Data URI fallback
+    final base64Str = base64Encode(bytes);
+    return 'data:$mimeType;base64,$base64Str';
   }
 
   /// Fetches the banner configuration. Reads local disk cache instantly,
@@ -1324,6 +1376,7 @@ class AdBannerService {
           // Save fresh version to local disk cache
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_prefKey, jsonEncode(_memoryCache.toJson()));
+          notifyBannerUpdated(_memoryCache);
         }
       }
     } catch (e) {
@@ -1337,6 +1390,7 @@ class AdBannerService {
   static Future<bool> saveBannerConfig(AdBannerConfig config) async {
     _memoryCache = config;
     _hasLoaded = true;
+    notifyBannerUpdated(config);
 
     // 1. Immediately persist to local device storage
     try {

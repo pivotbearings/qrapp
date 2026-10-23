@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -29,6 +31,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   bool _isNavigating = false;
   RewardProfile _rewardProfile = RewardProfile.defaultProfile();
   AdBannerConfig _adConfig = AdBannerConfig.defaultConfig();
+  StreamSubscription<AdBannerConfig>? _adBannerSub;
+  RealtimeChannel? _supabaseAdChannel;
 
   void _safeNavigate(String routeName) {
     if (_isNavigating) return;
@@ -49,11 +53,61 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     super.initState();
     AuthController.instance.addListener(_onAuthChanged);
     _adConfig = AdBannerService.currentConfig;
+    
+    // 1. Listen for immediate in-app real-time broadcasts
+    _adBannerSub = AdBannerService.onBannerConfigChanged.listen((newConfig) {
+      if (mounted) {
+        setState(() => _adConfig = newConfig);
+      }
+    });
+
+    // 2. Listen for remote Supabase Realtime changes across any browser / device
+    _initSupabaseRealtimeAdBanner();
+
     _loadDashboardData();
+  }
+
+  void _initSupabaseRealtimeAdBanner() {
+    if (!SupabaseService.isInitialized) return;
+    try {
+      final client = SupabaseService.client;
+      _supabaseAdChannel = client
+          .channel('public:app_settings:ad_banner')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'app_settings',
+            filter: const PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'setting_key',
+              value: 'home_ad_banner',
+            ),
+            callback: (payload) {
+              final newRecord = payload.newRecord;
+              if (newRecord.isNotEmpty && newRecord['setting_value'] != null) {
+                final val = newRecord['setting_value'];
+                final Map<String, dynamic> configMap = val is Map<String, dynamic>
+                    ? val
+                    : (val is String ? jsonDecode(val) : Map<String, dynamic>.from(val as Map));
+                final updated = AdBannerConfig.fromJson(configMap);
+                AdBannerService.notifyBannerUpdated(updated);
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('AdBanner realtime subscription notice: $e');
+    }
   }
 
   @override
   void dispose() {
+    _adBannerSub?.cancel();
+    if (_supabaseAdChannel != null) {
+      try {
+        SupabaseService.client.removeChannel(_supabaseAdChannel!);
+      } catch (_) {}
+    }
     AuthController.instance.removeListener(_onAuthChanged);
     super.dispose();
   }
