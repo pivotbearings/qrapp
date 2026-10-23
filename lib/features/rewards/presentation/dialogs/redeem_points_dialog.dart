@@ -153,7 +153,7 @@ class _RedeemPointsDialogState extends State<RedeemPointsDialog> {
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.stars_rounded, color: Colors.white, size: 24),
+                      child: const Icon(Icons.stars, color: Colors.white, size: 24),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

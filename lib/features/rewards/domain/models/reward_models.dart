@@ -293,3 +293,25 @@ class RewardSettings {
     };
   }
 }
+
+/// Generic container for database-level paginated reward records
+class PaginatedRewardResult<T> {
+  final List<T> items;
+  final int totalCount;
+  final int page;
+  final int pageSize;
+
+  const PaginatedRewardResult({
+    required this.items,
+    required this.totalCount,
+    required this.page,
+    required this.pageSize,
+  });
+
+  int get totalPages => (totalCount / pageSize).ceil().clamp(1, 9999);
+  bool get hasNextPage => page < totalPages - 1;
+  bool get hasPreviousPage => page > 0;
+  int get startIndex => totalCount == 0 ? 0 : page * pageSize + 1;
+  int get endIndex => ((page + 1) * pageSize).clamp(0, totalCount);
+}
+

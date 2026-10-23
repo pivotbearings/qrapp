@@ -1195,3 +1195,193 @@ class SupabaseService {
     } catch (_) {}
   }
 }
+
+/// Configuration model for the customer home advertisement banner
+class AdBannerConfig {
+  final String image;
+  final String targetUrl;
+  final bool isActive;
+  final String format;
+  final String fitMode; // 'contain' or 'cover'
+
+  const AdBannerConfig({
+    required this.image,
+    required this.targetUrl,
+    required this.isActive,
+    this.format = 'webp',
+    this.fitMode = 'contain',
+  });
+
+  /// Authoritative default configuration bundled with app
+  factory AdBannerConfig.defaultConfig() {
+    return const AdBannerConfig(
+      image: 'assets/ad_banner.webp',
+      targetUrl: 'https://www.pivotbearingsindia.com/',
+      isActive: true,
+      format: 'webp',
+      fitMode: 'contain',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'image': image,
+        'target_url': targetUrl,
+        'is_active': isActive,
+        'format': format,
+        'fit_mode': fitMode,
+      };
+
+  factory AdBannerConfig.fromJson(Map<String, dynamic> json) {
+    return AdBannerConfig(
+      image: (json['image'] ?? json['imageUrl'] ?? 'assets/ad_banner.webp').toString(),
+      targetUrl: (json['target_url'] ?? json['targetUrl'] ?? 'https://www.pivotbearingsindia.com/').toString(),
+      isActive: json['is_active'] is bool
+          ? json['is_active'] as bool
+          : (json['isActive'] is bool ? json['isActive'] as bool : true),
+      format: (json['format'] ?? 'webp').toString(),
+      fitMode: (json['fit_mode'] ?? json['fitMode'] ?? 'contain').toString(),
+    );
+  }
+
+  AdBannerConfig copyWith({
+    String? image,
+    String? targetUrl,
+    bool? isActive,
+    String? format,
+    String? fitMode,
+  }) {
+    return AdBannerConfig(
+      image: image ?? this.image,
+      targetUrl: targetUrl ?? this.targetUrl,
+      isActive: isActive ?? this.isActive,
+      format: format ?? this.format,
+      fitMode: fitMode ?? this.fitMode,
+    );
+  }
+}
+
+/// Service managing advertisement banner synchronization and caching
+class AdBannerService {
+  static const String _prefKey = 'pivot_home_ad_banner_v1';
+  static const String _supabaseKey = 'home_ad_banner';
+
+  static AdBannerConfig _memoryCache = AdBannerConfig.defaultConfig();
+  static bool _hasLoaded = false;
+
+  /// In-memory cache for fast, non-blocking UI reads
+  static AdBannerConfig get currentConfig => _memoryCache;
+
+  /// Validates whether a byte stream is true WebP container format (RIFF....WEBP)
+  static bool isWebPBytes(Uint8List bytes) {
+    if (bytes.length < 12) return false;
+    final isRiff = bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46;
+    final isWebP = bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
+    return isRiff && isWebP;
+  }
+
+  /// Fetches the banner configuration. Reads local disk cache instantly,
+  /// then asynchronously updates from Supabase `app_settings`.
+  static Future<AdBannerConfig> fetchBannerConfig({bool forceRefresh = false}) async {
+    // 1. Read from SharedPreferences if not already in memory
+    if (!_hasLoaded || forceRefresh) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString(_prefKey);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw) as Map<String, dynamic>;
+          _memoryCache = AdBannerConfig.fromJson(decoded);
+          _hasLoaded = true;
+        }
+      } catch (e) {
+        debugPrint('AdBannerService cache read error: $e');
+      }
+    }
+
+    // 2. Fetch authoritative configuration from Supabase
+    try {
+      if (SupabaseService.isInitialized) {
+        final client = SupabaseService.client;
+        final res = await client
+            .from('app_settings')
+            .select('setting_value')
+            .eq('setting_key', _supabaseKey)
+            .maybeSingle();
+
+        if (res != null && res['setting_value'] != null) {
+          final val = res['setting_value'];
+          final Map<String, dynamic> configMap;
+          if (val is Map<String, dynamic>) {
+            configMap = val;
+          } else if (val is String) {
+            configMap = jsonDecode(val) as Map<String, dynamic>;
+          } else {
+            configMap = Map<String, dynamic>.from(val as Map);
+          }
+
+          _memoryCache = AdBannerConfig.fromJson(configMap);
+          _hasLoaded = true;
+
+          // Save fresh version to local disk cache
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_prefKey, jsonEncode(_memoryCache.toJson()));
+        }
+      }
+    } catch (e) {
+      debugPrint('AdBannerService remote fetch error: $e');
+    }
+
+    return _memoryCache;
+  }
+
+  /// Saves a new banner configuration to both local storage and Supabase
+  static Future<bool> saveBannerConfig(AdBannerConfig config) async {
+    _memoryCache = config;
+    _hasLoaded = true;
+
+    // 1. Immediately persist to local device storage
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKey, jsonEncode(config.toJson()));
+    } catch (e) {
+      debugPrint('AdBannerService local save error: $e');
+    }
+
+    // 2. Persist to Supabase app_settings table
+    try {
+      if (SupabaseService.isInitialized) {
+        final client = SupabaseService.client;
+        final existing = await client
+            .from('app_settings')
+            .select('id')
+            .eq('setting_key', _supabaseKey)
+            .maybeSingle();
+
+        if (existing != null) {
+          await client.from('app_settings').update({
+            'setting_value': config.toJson(),
+            'is_public': true,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', existing['id']);
+        } else {
+          await client.from('app_settings').insert({
+            'setting_key': _supabaseKey,
+            'setting_value': config.toJson(),
+            'description': 'Customer Home Screen Advertisement WebP Banner Configuration',
+            'is_public': true,
+          });
+        }
+        return true;
+      }
+    } catch (e) {
+      debugPrint('AdBannerService remote save error: $e');
+    }
+
+    return true;
+  }
+
+  /// Resets banner back to the default bundled Pivot Bearings WebP advertisement
+  static Future<bool> resetToDefault() async {
+    return await saveBannerConfig(AdBannerConfig.defaultConfig());
+  }
+}
+

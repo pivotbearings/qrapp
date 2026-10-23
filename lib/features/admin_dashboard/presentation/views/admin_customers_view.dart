@@ -37,6 +37,9 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
   Timer? _refreshTimer;
   RealtimeChannel? _profilesRealtimeChannel;
 
+  int _currentPage = 0;
+  static const int _pageSize = 10;
+
   // Track which user emails are currently expanded in the UI
   final Set<String> _expandedEmails = {};
 
@@ -450,20 +453,167 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                   ),
                 )
               else
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _customers.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final user = _customers[index];
-                    return _buildUserCard(user);
+                Builder(
+                  builder: (context) {
+                    final isSearching = _searchCtrl.text.trim().isNotEmpty;
+                    final totalCount = _customers.length;
+                    final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
+                    final currentPage = _currentPage.clamp(0, totalPages - 1);
+                    final startIndex = isSearching ? 0 : currentPage * _pageSize;
+                    final endIndex = isSearching
+                        ? totalCount
+                        : (startIndex + _pageSize < totalCount ? startIndex + _pageSize : totalCount);
+                    final displayedUsers = (totalCount == 0 || isSearching)
+                        ? _customers
+                        : _customers.sublist(startIndex, endIndex);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: displayedUsers.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final user = displayedUsers[index];
+                            return _buildUserCard(user);
+                          },
+                        ),
+                        if (!isSearching && totalCount > _pageSize) ...[
+                          const SizedBox(height: 12),
+                          _buildPaginationBar(
+                            currentPage: currentPage,
+                            totalCount: totalCount,
+                            pageSize: _pageSize,
+                            isLoading: _isLoading,
+                            itemName: 'users',
+                            onPageChanged: (p) => setState(() => _currentPage = p),
+                          ),
+                        ],
+                      ],
+                    );
                   },
                 ),
             ],
           ),
         );
       },
+    );
+  }
+
+  /// Clean, minimal & strictly mobile-responsive pagination bar
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalCount,
+    required int pageSize,
+    required bool isLoading,
+    required String itemName,
+    required ValueChanged<int> onPageChanged,
+  }) {
+    if (totalCount <= pageSize) {
+      if (totalCount > 0) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: Center(
+            child: Text(
+              'Showing all $totalCount $itemName',
+              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    final totalPages = (totalCount / pageSize).ceil().clamp(1, 9999);
+    final startIndex = currentPage * pageSize + 1;
+    final endIndex = ((currentPage + 1) * pageSize).clamp(0, totalCount);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12, bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 360;
+
+          final infoText = Text(
+            'Showing $startIndex–$endIndex of $totalCount $itemName',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+
+          final controls = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (currentPage > 0 && !isLoading)
+                    ? () => onPageChanged(currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isLoading ? '...' : 'Page ${currentPage + 1} of $totalPages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (currentPage < totalPages - 1 && !isLoading)
+                    ? () => onPageChanged(currentPage + 1)
+                    : null,
+              ),
+            ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                infoText,
+                const SizedBox(height: 6),
+                controls,
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              infoText,
+              controls,
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -762,7 +912,7 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                     subtitle: isRewardEligible
                         ? 'User is eligible to earn 1st scan reward points and request payouts.'
                         : 'User is blocked from reward points. Scan verification displays polite standard notice.',
-                    icon: Icons.stars_rounded,
+                    icon: Icons.stars,
                     value: isRewardEligible,
                     isDisabled: false,
                     enabledLabel: 'ELIGIBLE',

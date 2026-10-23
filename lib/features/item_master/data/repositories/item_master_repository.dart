@@ -190,10 +190,10 @@ class ItemMasterRepository {
     }
   }
 
-  /// Paginated query for Item Master screen (default 20 items per page)
+  /// Paginated query for Item Master screen (default 10 items per page)
   PaginatedResult<BearingItemModel> getPaginatedMasterItems({
     int page = 1,
-    int pageSize = 20,
+    int pageSize = 10,
     String query = '',
   }) {
     return _queryItems(page: page, pageSize: pageSize, query: query);

@@ -28,6 +28,11 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
   bool _isLoading = true;
   String _selectedStatus = 'PENDING'; // 'ALL', 'PENDING', 'COMPLETED', 'REJECTED'
 
+  int _redPage = 0;
+  int _redTotalCount = 0;
+  bool _redLoading = false;
+  static const int _pageSize = 10;
+
   List<RewardRedemption> _redemptions = [];
   RewardSettings _settings = const RewardSettings();
 
@@ -62,8 +67,10 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
     setState(() => _isLoading = true);
     try {
       final settings = await RewardService.fetchRewardSettings();
-      final redemptions = await RewardService.fetchAdminRedemptions(
+      final redRes = await RewardService.fetchAdminRedemptionsPaginated(
         statusFilter: _selectedStatus == 'ALL' ? null : _selectedStatus,
+        page: 0,
+        pageSize: _pageSize,
       );
 
       _inrPer10PtsCtrl.text = settings.inrPerBaseUnit.toStringAsFixed(2);
@@ -76,7 +83,9 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
       if (mounted) {
         setState(() {
           _settings = settings;
-          _redemptions = redemptions;
+          _redemptions = redRes.items;
+          _redTotalCount = redRes.totalCount;
+          _redPage = 0;
           _isLoading = false;
         });
       }
@@ -84,6 +93,30 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
       if (mounted) {
         setState(() => _isLoading = false);
         AppSnackBar.showError(context, 'Failed to load rewards data: $e');
+      }
+    }
+  }
+
+  Future<void> _loadRedemptions({int page = 0}) async {
+    setState(() => _redLoading = true);
+    try {
+      final res = await RewardService.fetchAdminRedemptionsPaginated(
+        statusFilter: _selectedStatus == 'ALL' ? null : _selectedStatus,
+        page: page,
+        pageSize: _pageSize,
+      );
+      if (mounted) {
+        setState(() {
+          _redemptions = res.items;
+          _redTotalCount = res.totalCount;
+          _redPage = page;
+          _redLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _redLoading = false);
+        AppSnackBar.showError(context, 'Failed to load redemption queue: $e');
       }
     }
   }
@@ -456,7 +489,7 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.stars_rounded, color: Colors.white, size: 24),
+                child: const Icon(Icons.stars, color: Colors.white, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -545,9 +578,12 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
           ),
         ),
 
+        if (_redLoading)
+          const LinearProgressIndicator(color: AppColors.primary, minHeight: 2),
+
         // List
         Expanded(
-          child: _redemptions.isEmpty
+          child: _redemptions.isEmpty && !_redLoading
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(32.0),
@@ -564,17 +600,146 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
                     ),
                   ),
                 )
-              : ListView.separated(
+              : ListView(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _redemptions.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (ctx, idx) {
-                    final r = _redemptions[idx];
-                    return _buildAdminRedemptionCard(r);
-                  },
+                  children: [
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _redemptions.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (ctx, idx) {
+                        final r = _redemptions[idx];
+                        return _buildAdminRedemptionCard(r);
+                      },
+                    ),
+                    _buildPaginationBar(
+                      currentPage: _redPage,
+                      totalCount: _redTotalCount,
+                      pageSize: _pageSize,
+                      isLoading: _redLoading,
+                      itemName: 'requests',
+                      onPageChanged: (newPage) => _loadRedemptions(page: newPage),
+                    ),
+                  ],
                 ),
         ),
       ],
+    );
+  }
+
+  /// Clean, minimal & strictly mobile-responsive pagination bar
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalCount,
+    required int pageSize,
+    required bool isLoading,
+    required String itemName,
+    required ValueChanged<int> onPageChanged,
+  }) {
+    if (totalCount <= pageSize) {
+      if (totalCount > 0) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: Center(
+            child: Text(
+              'Showing all $totalCount $itemName',
+              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    final totalPages = (totalCount / pageSize).ceil().clamp(1, 9999);
+    final startIndex = currentPage * pageSize + 1;
+    final endIndex = ((currentPage + 1) * pageSize).clamp(0, totalCount);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12, bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 360;
+
+          final infoText = Text(
+            'Showing $startIndex–$endIndex of $totalCount $itemName',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+
+          final controls = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (currentPage > 0 && !isLoading)
+                    ? () => onPageChanged(currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isLoading ? '...' : 'Page ${currentPage + 1} of $totalPages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (currentPage < totalPages - 1 && !isLoading)
+                    ? () => onPageChanged(currentPage + 1)
+                    : null,
+              ),
+            ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                infoText,
+                const SizedBox(height: 6),
+                controls,
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              infoText,
+              controls,
+            ],
+          );
+        },
+      ),
     );
   }
 

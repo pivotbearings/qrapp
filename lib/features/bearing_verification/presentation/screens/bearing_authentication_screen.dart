@@ -1250,13 +1250,12 @@ class _BearingAuthenticationScreenState
           Container(
             width: 44,
             height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.background,
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.primary, width: 1.5),
             ),
             child: const Center(
-              child: Icon(Icons.stars_rounded, color: AppColors.primary, size: 26),
+              child: Icon(Icons.stars, color: Colors.white, size: 26),
             ),
           ),
           const SizedBox(width: 14),
@@ -1309,7 +1308,7 @@ class _BearingAuthenticationScreenState
       ),
       child: const Row(
         children: [
-          Icon(Icons.stars_rounded, color: AppColors.primary, size: 20),
+          Icon(Icons.stars, color: AppColors.primary, size: 20),
           SizedBox(width: 10),
           Expanded(
             child: Text(

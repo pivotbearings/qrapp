@@ -32,6 +32,18 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
   List<RewardTransaction> _transactions = [];
   List<RewardRedemption> _redemptions = [];
 
+  static const int _pageSize = 10;
+
+  // Pagination for Tab 1: REDEMPTIONS (10 per page)
+  int _redPage = 0;
+  int _redTotalCount = 0;
+  bool _redLoading = false;
+
+  // Pagination for Tab 2: POINTS LEDGER (10 per page)
+  int _txPage = 0;
+  int _txTotalCount = 0;
+  bool _txLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,14 +61,18 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
     setState(() => _isLoading = true);
     try {
       final prof = await RewardService.fetchUserRewardProfile();
-      final txns = await RewardService.fetchUserTransactions();
-      final reds = await RewardService.fetchUserRedemptions();
+      final txRes = await RewardService.fetchUserTransactionsPaginated(page: 0, pageSize: _pageSize);
+      final redRes = await RewardService.fetchUserRedemptionsPaginated(page: 0, pageSize: _pageSize);
 
       if (mounted) {
         setState(() {
           _profile = prof;
-          _transactions = txns;
-          _redemptions = reds;
+          _transactions = txRes.items;
+          _txTotalCount = txRes.totalCount;
+          _txPage = 0;
+          _redemptions = redRes.items;
+          _redTotalCount = redRes.totalCount;
+          _redPage = 0;
           _isLoading = false;
         });
       }
@@ -64,6 +80,52 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
       if (mounted) {
         setState(() => _isLoading = false);
         AppSnackBar.showError(context, 'Failed to refresh wallet: $e');
+      }
+    }
+  }
+
+  Future<void> _loadTransactions({int page = 0}) async {
+    setState(() => _txLoading = true);
+    try {
+      final res = await RewardService.fetchUserTransactionsPaginated(
+        page: page,
+        pageSize: _pageSize,
+      );
+      if (mounted) {
+        setState(() {
+          _transactions = res.items;
+          _txTotalCount = res.totalCount;
+          _txPage = page;
+          _txLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _txLoading = false);
+        AppSnackBar.showError(context, 'Failed to load points ledger: $e');
+      }
+    }
+  }
+
+  Future<void> _loadRedemptions({int page = 0}) async {
+    setState(() => _redLoading = true);
+    try {
+      final res = await RewardService.fetchUserRedemptionsPaginated(
+        page: page,
+        pageSize: _pageSize,
+      );
+      if (mounted) {
+        setState(() {
+          _redemptions = res.items;
+          _redTotalCount = res.totalCount;
+          _redPage = page;
+          _redLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _redLoading = false);
+        AppSnackBar.showError(context, 'Failed to load redemptions: $e');
       }
     }
   }
@@ -189,7 +251,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
             children: [
               const Row(
                 children: [
-                  Icon(Icons.stars_rounded, color: Colors.white, size: 22),
+                  Icon(Icons.stars, color: Colors.white, size: 22),
                   SizedBox(width: 8),
                   Text(
                     'PIVOT REWARD WALLET',
@@ -425,7 +487,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
   }
 
   Widget _buildRedemptionsList() {
-    if (_redemptions.isEmpty) {
+    if (_redemptions.isEmpty && !_redLoading) {
       return _buildEmptyState(
         icon: Icons.history_rounded,
         title: 'No Redemption Requests Yet',
@@ -433,14 +495,33 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
       );
     }
 
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-      itemCount: _redemptions.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (ctx, idx) {
-        final r = _redemptions[idx];
-        return _buildRedemptionCard(r);
-      },
+      children: [
+        if (_redLoading)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: LinearProgressIndicator(color: AppColors.primary, minHeight: 2),
+          ),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _redemptions.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (ctx, idx) {
+            final r = _redemptions[idx];
+            return _buildRedemptionCard(r);
+          },
+        ),
+        _buildPaginationBar(
+          currentPage: _redPage,
+          totalCount: _redTotalCount,
+          pageSize: _pageSize,
+          isLoading: _redLoading,
+          itemName: 'redemptions',
+          onPageChanged: (newPage) => _loadRedemptions(page: newPage),
+        ),
+      ],
     );
   }
 
@@ -583,7 +664,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
   }
 
   Widget _buildTransactionsList() {
-    if (_transactions.isEmpty) {
+    if (_transactions.isEmpty && !_txLoading) {
       return _buildEmptyState(
         icon: Icons.receipt_long_rounded,
         title: 'No Transactions Recorded',
@@ -591,65 +672,199 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
       );
     }
 
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-      itemCount: _transactions.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (ctx, idx) {
-        final t = _transactions[idx];
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.black12, width: 1.0),
+      children: [
+        if (_txLoading)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: LinearProgressIndicator(color: AppColors.primary, minHeight: 2),
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: t.isCredit ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  t.isCredit ? Icons.add_circle_outline : Icons.remove_circle_outline,
-                  color: t.isCredit ? const Color(0xFF0D8A4E) : const Color(0xFFD32F2F),
-                  size: 20,
-                ),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _transactions.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (ctx, idx) {
+            final t = _transactions[idx];
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.black12, width: 1.0),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      t.description,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: t.isCredit ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
+                      shape: BoxShape.circle,
                     ),
-                    if (t.createdAt != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        _dateFormat.format(t.createdAt!),
-                        style: const TextStyle(fontSize: 10, color: Colors.black45),
-                      ),
-                    ],
-                  ],
-                ),
+                    child: Icon(
+                      t.isCredit ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                      color: t.isCredit ? const Color(0xFF0D8A4E) : const Color(0xFFD32F2F),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t.description,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                        ),
+                        if (t.createdAt != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            _dateFormat.format(t.createdAt!),
+                            style: const TextStyle(fontSize: 10, color: Colors.black45),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${t.isCredit ? "+" : ""}${t.points} pts',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                      color: t.isCredit ? const Color(0xFF0D8A4E) : const Color(0xFFD32F2F),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${t.isCredit ? "+" : ""}${t.points} pts',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                  color: t.isCredit ? const Color(0xFF0D8A4E) : const Color(0xFFD32F2F),
-                ),
-              ),
-            ],
+            );
+          },
+        ),
+        _buildPaginationBar(
+          currentPage: _txPage,
+          totalCount: _txTotalCount,
+          pageSize: _pageSize,
+          isLoading: _txLoading,
+          itemName: 'entries',
+          onPageChanged: (newPage) => _loadTransactions(page: newPage),
+        ),
+      ],
+    );
+  }
+
+  /// Clean, minimal & strictly mobile-responsive pagination bar
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalCount,
+    required int pageSize,
+    required bool isLoading,
+    required String itemName,
+    required ValueChanged<int> onPageChanged,
+  }) {
+    if (totalCount <= pageSize) {
+      if (totalCount > 0) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: Center(
+            child: Text(
+              'Showing all $totalCount $itemName',
+              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
+            ),
           ),
         );
-      },
+      }
+      return const SizedBox.shrink();
+    }
+
+    final totalPages = (totalCount / pageSize).ceil().clamp(1, 9999);
+    final startIndex = currentPage * pageSize + 1;
+    final endIndex = ((currentPage + 1) * pageSize).clamp(0, totalCount);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10, bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 360;
+
+          final infoText = Text(
+            'Showing $startIndex–$endIndex of $totalCount $itemName',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+
+          final controls = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (currentPage > 0 && !isLoading)
+                    ? () => onPageChanged(currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isLoading ? '...' : 'Page ${currentPage + 1} of $totalPages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (currentPage < totalPages - 1 && !isLoading)
+                    ? () => onPageChanged(currentPage + 1)
+                    : null,
+              ),
+            ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                infoText,
+                const SizedBox(height: 6),
+                controls,
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              infoText,
+              controls,
+            ],
+          );
+        },
+      ),
     );
   }
 

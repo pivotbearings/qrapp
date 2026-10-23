@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../domain/models/reward_models.dart';
@@ -128,51 +129,118 @@ class RewardService {
   // ===========================================================================
   // 4. USER TRANSACTIONS & REDEMPTION LISTS
   // ===========================================================================
-  static Future<List<RewardTransaction>> fetchUserTransactions() async {
+  // 4. USER TRANSACTIONS & REDEMPTION LISTS (PAGINATED AT 10 PER PAGE)
+  // ===========================================================================
+  static Future<PaginatedRewardResult<RewardTransaction>> fetchUserTransactionsPaginated({
+    int page = 0,
+    int pageSize = 10,
+  }) async {
     if (SupabaseService.isInitialized) {
       try {
         final uid = AuthController.instance.userId ?? SupabaseService.currentUserId;
         if (uid != null) {
+          // 1. Fetch exact total count
+          final countRes = await SupabaseService.client
+              .from('reward_transactions')
+              .count(CountOption.exact)
+              .eq('user_id', uid);
+
+          // 2. Query page slice (default: 10 entries first)
+          final from = page * pageSize;
+          final to = from + pageSize - 1;
           final res = await SupabaseService.client
               .from('reward_transactions')
               .select()
               .eq('user_id', uid)
               .order('created_at', ascending: false)
-              .limit(100);
+              .range(from, to);
 
-          return (res as List)
+          final items = (res as List)
               .map((row) => RewardTransaction.fromJson(Map<String, dynamic>.from(row)))
               .toList();
+
+          return PaginatedRewardResult<RewardTransaction>(
+            items: items,
+            totalCount: countRes,
+            page: page,
+            pageSize: pageSize,
+          );
         }
       } catch (e) {
-        debugPrint('Supabase fetchUserTransactions error: $e');
+        debugPrint('Supabase fetchUserTransactionsPaginated error: $e');
       }
     }
-    return [];
+
+    final all = await _localGetUserTransactions();
+    final from = page * pageSize;
+    final items = all.skip(from).take(pageSize).toList();
+    return PaginatedRewardResult<RewardTransaction>(
+      items: items,
+      totalCount: all.length,
+      page: page,
+      pageSize: pageSize,
+    );
   }
 
-  static Future<List<RewardRedemption>> fetchUserRedemptions() async {
+  static Future<List<RewardTransaction>> fetchUserTransactions({int limit = 10, int offset = 0}) async {
+    final paginated = await fetchUserTransactionsPaginated(page: offset ~/ limit, pageSize: limit);
+    return paginated.items;
+  }
+
+  static Future<PaginatedRewardResult<RewardRedemption>> fetchUserRedemptionsPaginated({
+    int page = 0,
+    int pageSize = 10,
+  }) async {
     if (SupabaseService.isInitialized) {
       try {
         final uid = AuthController.instance.userId ?? SupabaseService.currentUserId;
         if (uid != null) {
+          // 1. Fetch exact count
+          final countRes = await SupabaseService.client
+              .from('reward_redemptions')
+              .count(CountOption.exact)
+              .eq('user_id', uid);
+
+          // 2. Query page slice (default: 10 entries first)
+          final from = page * pageSize;
+          final to = from + pageSize - 1;
           final res = await SupabaseService.client
               .from('reward_redemptions')
               .select()
               .eq('user_id', uid)
               .order('created_at', ascending: false)
-              .limit(100);
+              .range(from, to);
 
-          return (res as List)
+          final items = (res as List)
               .map((row) => RewardRedemption.fromJson(Map<String, dynamic>.from(row)))
               .toList();
+
+          return PaginatedRewardResult<RewardRedemption>(
+            items: items,
+            totalCount: countRes,
+            page: page,
+            pageSize: pageSize,
+          );
         }
       } catch (e) {
-        debugPrint('Supabase fetchUserRedemptions error: $e');
+        debugPrint('Supabase fetchUserRedemptionsPaginated error: $e');
       }
     }
 
-    return await _localGetUserRedemptions();
+    final all = await _localGetUserRedemptions();
+    final from = page * pageSize;
+    final items = all.skip(from).take(pageSize).toList();
+    return PaginatedRewardResult<RewardRedemption>(
+      items: items,
+      totalCount: all.length,
+      page: page,
+      pageSize: pageSize,
+    );
+  }
+
+  static Future<List<RewardRedemption>> fetchUserRedemptions({int limit = 10, int offset = 0}) async {
+    final paginated = await fetchUserRedemptionsPaginated(page: offset ~/ limit, pageSize: limit);
+    return paginated.items;
   }
 
   // ===========================================================================
@@ -257,15 +325,27 @@ class RewardService {
     }
   }
 
-  static Future<List<RewardRedemption>> fetchAdminRedemptions({String? statusFilter}) async {
+  static Future<PaginatedRewardResult<RewardRedemption>> fetchAdminRedemptionsPaginated({
+    String? statusFilter,
+    int page = 0,
+    int pageSize = 10,
+  }) async {
     if (SupabaseService.isInitialized) {
       try {
+        var countQuery = SupabaseService.client.from('reward_redemptions').count(CountOption.exact);
+        if (statusFilter != null && statusFilter != 'ALL') {
+          countQuery = countQuery.eq('status', statusFilter);
+        }
+        final totalCount = await countQuery;
+
         var query = SupabaseService.client.from('reward_redemptions').select('*');
         if (statusFilter != null && statusFilter != 'ALL') {
           query = query.eq('status', statusFilter);
         }
 
-        final res = await query.order('created_at', ascending: false).limit(200);
+        final from = page * pageSize;
+        final to = from + pageSize - 1;
+        final res = await query.order('created_at', ascending: false).range(from, to);
         final rows = List<Map<String, dynamic>>.from(
           (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
         );
@@ -302,13 +382,36 @@ class RewardService {
           }
         }
 
-        return rows.map((row) => RewardRedemption.fromJson(row)).toList();
+        final items = rows.map((row) => RewardRedemption.fromJson(row)).toList();
+        return PaginatedRewardResult<RewardRedemption>(
+          items: items,
+          totalCount: totalCount,
+          page: page,
+          pageSize: pageSize,
+        );
       } catch (e) {
-        debugPrint('Supabase fetchAdminRedemptions error: $e');
+        debugPrint('Supabase fetchAdminRedemptionsPaginated error: $e');
       }
     }
 
-    return await _localGetAllRedemptions(statusFilter);
+    final all = await _localGetAllRedemptions(statusFilter);
+    final from = page * pageSize;
+    final items = all.skip(from).take(pageSize).toList();
+    return PaginatedRewardResult<RewardRedemption>(
+      items: items,
+      totalCount: all.length,
+      page: page,
+      pageSize: pageSize,
+    );
+  }
+
+  static Future<List<RewardRedemption>> fetchAdminRedemptions({String? statusFilter, int limit = 10, int offset = 0}) async {
+    final paginated = await fetchAdminRedemptionsPaginated(
+      statusFilter: statusFilter,
+      page: offset ~/ limit,
+      pageSize: limit,
+    );
+    return paginated.items;
   }
 
   static Future<Map<String, dynamic>> adminProcessRedemption({
@@ -502,6 +605,19 @@ class RewardService {
       'status': 'PENDING',
       'message': 'Redemption request submitted successfully!',
     };
+  }
+
+  static Future<List<RewardTransaction>> _localGetUserTransactions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userEmail = AuthController.instance.userEmail ?? 'default_user';
+    final raw = prefs.getString('${_prefKeyOfflineWallet}txns_$userEmail');
+    if (raw == null) return [];
+    try {
+      final list = List<Map<String, dynamic>>.from(jsonDecode(raw));
+      return list.map((item) => RewardTransaction.fromJson(item)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   static Future<List<RewardRedemption>> _localGetUserRedemptions() async {

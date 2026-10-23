@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
@@ -26,6 +28,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   int _activeCount = 0;
   bool _isNavigating = false;
   RewardProfile _rewardProfile = RewardProfile.defaultProfile();
+  AdBannerConfig _adConfig = AdBannerConfig.defaultConfig();
 
   void _safeNavigate(String routeName) {
     if (_isNavigating) return;
@@ -45,6 +48,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   void initState() {
     super.initState();
     AuthController.instance.addListener(_onAuthChanged);
+    _adConfig = AdBannerService.currentConfig;
     _loadDashboardData();
   }
 
@@ -80,6 +84,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         setState(() => _rewardProfile = rp);
       }
     } catch (_) {}
+
+    try {
+      final ad = await AdBannerService.fetchBannerConfig(forceRefresh: true);
+      if (mounted) {
+        setState(() => _adConfig = ad);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -98,188 +109,204 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 final minH = (constraints.maxHeight.isFinite && constraints.maxHeight > AppDimensions.gutterMobile * 2)
                     ? (constraints.maxHeight - (AppDimensions.gutterMobile * 2))
                     : 0.0;
+                final bannerHeight = (constraints.maxWidth * 0.46).clamp(150.0, 240.0);
+
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(AppDimensions.gutterMobile),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: minH,
                     ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Header & Brand Title
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 38,
-                                      height: 38,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                                        border: Border.all(color: AppColors.primary, width: 1.2),
-                                      ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: Image.asset(
-                                        'assets/webappicon.png',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // --- TOP SECTION ---
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Header & Brand Title
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Container(
                                         width: 38,
                                         height: 38,
-                                        fit: BoxFit.cover,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                                          border: Border.all(color: AppColors.primary, width: 1.2),
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: Image.asset(
+                                          'assets/webappicon.png',
+                                          width: 38,
+                                          height: 38,
+                                          fit: BoxFit.cover,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'PIVOT BEARINGS',
-                                            style: AppTypography.headlineSm.copyWith(
-                                              fontWeight: FontWeight.w900,
-                                              letterSpacing: 1.2,
-                                              color: AppColors.primary,
-                                              fontSize: 16,
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'PIVOT BEARINGS',
+                                              style: AppTypography.headlineSm.copyWith(
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 1.2,
+                                                color: AppColors.primary,
+                                                fontSize: 16,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              if (auth.isAdmin)
+                                if (auth.isAdmin)
+                                  IconButton(
+                                    icon: const Icon(Icons.admin_panel_settings_rounded, color: AppColors.primary, size: 26),
+                                    tooltip: 'Open Admin Workstation',
+                                    onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                                  ),
                                 IconButton(
-                                  icon: const Icon(Icons.admin_panel_settings_rounded, color: AppColors.primary, size: 26),
-                                  tooltip: 'Open Admin Workstation',
-                                  onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                                  icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
+                                  tooltip: 'Refresh Dashboard',
+                                  onPressed: _loadDashboardData,
                                 ),
-                              IconButton(
-                                icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
-                                tooltip: 'Refresh Dashboard',
-                                onPressed: _loadDashboardData,
+                              ],
+                            ),
+
+                            const SizedBox(height: AppDimensions.spaceMd),
+
+                            // Admin Workstation Quick Access Banner
+                            if (auth.isAdmin) ...[
+                              InkWell(
+                                mouseCursor: SystemMouseCursors.click,
+                                onTap: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                                borderRadius: BorderRadius.circular(16),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black12,
+                                        blurRadius: 8,
+                                        offset: Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
+                                      const SizedBox(width: 12),
+                                      const Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'ADMIN WORKSTATION',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 13,
+                                                letterSpacing: 0.5,
+                                              ),
+                                            ),
+                                            SizedBox(height: 2),
+                                            Text(
+                                              'Tap to open telemetry, QR generation & registry',
+                                              style: TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Text(
+                                          'OPEN',
+                                          style: TextStyle(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
+                              const SizedBox(height: AppDimensions.spaceMd),
                             ],
-                          ),
 
-                          const SizedBox(height: AppDimensions.spaceMd),
-
-                          // Admin Workstation Quick Access Banner
-                          if (auth.isAdmin) ...[
-                            InkWell(
-                              mouseCursor: SystemMouseCursors.click,
-                              onTap: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Colors.black12,
-                                      blurRadius: 8,
-                                      offset: Offset(0, 2),
+                            // Dynamic Metric Row (visible if Warranty or Track module is enabled)
+                            if (auth.hasTrackBearingAccess || auth.hasWarrantyAccess) ...[
+                              Row(
+                                children: [
+                                  if (auth.hasTrackBearingAccess) ...[
+                                    Expanded(
+                                      child: _buildMetricTile(count: '$_inCount', label: loc.translate('currently_in')),
+                                    ),
+                                    const SizedBox(width: AppDimensions.spaceSm),
+                                    Expanded(
+                                      child: _buildMetricTile(count: '$_outCount', label: loc.translate('currently_out')),
                                     ),
                                   ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
-                                    const SizedBox(width: 12),
-                                    const Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'ADMIN WORKSTATION',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 13,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
-                                          SizedBox(height: 2),
-                                          Text(
-                                            'Tap to open telemetry, QR generation & registry',
-                                            style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Text(
-                                        'OPEN',
-                                        style: TextStyle(
-                                          color: AppColors.primary,
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 11,
+                                  if (auth.hasTrackBearingAccess && auth.hasWarrantyAccess)
+                                    const SizedBox(width: AppDimensions.spaceSm),
+                                  if (auth.hasWarrantyAccess)
+                                    Expanded(
+                                      child: InkWell(
+                                        mouseCursor: SystemMouseCursors.click,
+                                        onTap: () => _safeNavigate(AppRoutes.warrantyCheck),
+                                        borderRadius: BorderRadius.circular(24),
+                                        child: _buildMetricTile(
+                                          count: '$_activeCount',
+                                          label: loc.translate('active_warranties'),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppDimensions.spaceMd),
-                          ],
-
-                          // Dynamic Metric Row (visible if Warranty or Track module is enabled)
-                          if (auth.hasTrackBearingAccess || auth.hasWarrantyAccess) ...[
-                            Row(
-                              children: [
-                                if (auth.hasTrackBearingAccess) ...[
-                                  Expanded(
-                                    child: _buildMetricTile(count: '$_inCount', label: loc.translate('currently_in')),
-                                  ),
-                                  const SizedBox(width: AppDimensions.spaceSm),
-                                  Expanded(
-                                    child: _buildMetricTile(count: '$_outCount', label: loc.translate('currently_out')),
-                                  ),
                                 ],
-                                if (auth.hasTrackBearingAccess && auth.hasWarrantyAccess)
-                                  const SizedBox(width: AppDimensions.spaceSm),
-                                if (auth.hasWarrantyAccess)
-                                  Expanded(
-                                    child: InkWell(
-                                      mouseCursor: SystemMouseCursors.click,
-                                      onTap: () => _safeNavigate(AppRoutes.warrantyCheck),
-                                      borderRadius: BorderRadius.circular(24),
-                                      child: _buildMetricTile(
-                                        count: '$_activeCount',
-                                        label: loc.translate('active_warranties'),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: AppDimensions.spaceMd),
-                          ] else ...[
-                            // Standard default badge for newly registered users
-                            _buildDefaultAuthenticationBadge(),
-                            const SizedBox(height: AppDimensions.spaceMd),
+                              ),
+                              const SizedBox(height: AppDimensions.spaceMd),
+                            ] else ...[
+                              // Standard default badge for newly registered users
+                              _buildDefaultAuthenticationBadge(),
+                              const SizedBox(height: AppDimensions.spaceMd),
+                            ],
+
+                            // ADVERTISEMENT BANNER (Configured from Admin Panel, WebP format)
+                            if (_adConfig.isActive) ...[
+                              _buildAdvertisementBanner(bannerHeight),
+                              const SizedBox(height: AppDimensions.spaceMd),
+                            ],
                           ],
+                        ),
 
-                          // REWARD POINTS WALLET BANNER (Visible to all registered users)
-                          _buildRewardWalletCard(),
-                          const SizedBox(height: AppDimensions.spaceSm),
-
-                          const Spacer(),
-                          const SizedBox(height: AppDimensions.spaceSm),
-                        ],
-                      ),
+                        // --- BOTTOM SECTION (Anchored at the bottom above navigation bar) ---
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: AppDimensions.spaceSm),
+                            _buildRewardWalletCard(),
+                            const SizedBox(height: AppDimensions.spaceSm),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -290,6 +317,175 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       ),
       bottomNavigationBar: _buildBottomNav(loc),
     );
+  }
+
+  /// Advertisement Banner dynamically configurable from Admin Panel
+  Widget _buildAdvertisementBanner(double height) {
+    return Container(
+      width: double.infinity,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFF001F59),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF001F59), width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x18001F59),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openAdBannerLink,
+          mouseCursor: SystemMouseCursors.click,
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildAdBannerImage(_adConfig),
+
+              // Official Featured Badge
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white24, width: 0.8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.open_in_new, color: Colors.white, size: 10),
+                      SizedBox(width: 4),
+                      Text(
+                        'FEATURED',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdBannerImage(AdBannerConfig config) {
+    final fit = config.fitMode == 'cover' ? BoxFit.cover : BoxFit.contain;
+
+    if (config.image.startsWith('assets/')) {
+      return Image.asset(
+        config.image,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) => _buildFallbackAdImage(config),
+      );
+    }
+
+    if (config.image.startsWith('data:')) {
+      try {
+        final raw = config.image.contains(',') ? config.image.split(',')[1] : config.image;
+        final bytes = base64Decode(raw);
+        return Image.memory(
+          bytes,
+          fit: fit,
+          errorBuilder: (context, error, stackTrace) => _buildFallbackAdImage(config),
+        );
+      } catch (_) {
+        return _buildFallbackAdImage(config);
+      }
+    }
+
+    if (config.image.startsWith('http')) {
+      return Image.network(
+        config.image,
+        fit: fit,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => _buildFallbackAdImage(config),
+      );
+    }
+
+    return _buildFallbackAdImage(config);
+  }
+
+  Widget _buildFallbackAdImage(AdBannerConfig config) {
+    return Container(
+      color: const Color(0xFF001F59),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.precision_manufacturing_rounded, color: Colors.white, size: 30),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'PIVOT INDUSTRIAL BEARINGS',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              'Heavy-Duty Precision Engineering & High-Load Reliability',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAdBannerLink() async {
+    final target = _adConfig.targetUrl.trim();
+    if (target.isEmpty) return;
+    try {
+      final uri = Uri.parse(target);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('Could not launch ad target link: $e');
+    }
   }
 
   /// Default banner shown when only Bearing Authentication is active
@@ -365,16 +561,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               Container(
                 width: 44,
                 height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary, width: 1.5),
                 ),
                 child: const Center(
                   child: Icon(
-                    Icons.stars_rounded,
-                    color: AppColors.primary,
-                    size: 24,
+                    Icons.stars,
+                    color: Colors.white,
+                    size: 26,
                   ),
                 ),
               ),

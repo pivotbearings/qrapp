@@ -31,6 +31,8 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
   String? _errorMessage;
   Timer? _refreshTimer;
   String _activeFilter = 'ALL'; // ALL, PENDING, APPROVED, ADMINS
+  int _currentPage = 0;
+  static const int _pageSize = 10;
 
   @override
   void initState() {
@@ -424,18 +426,159 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
           else
             LayoutBuilder(
               builder: (context, constraints) {
+                final isSearching = _searchCtrl.text.trim().isNotEmpty;
+                final totalCount = filteredUsers.length;
+                final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
+                final currentPage = _currentPage.clamp(0, totalPages - 1);
+                final startIndex = isSearching ? 0 : currentPage * _pageSize;
+                final endIndex = isSearching
+                    ? totalCount
+                    : (startIndex + _pageSize < totalCount ? startIndex + _pageSize : totalCount);
+                final displayed = (totalCount == 0 || isSearching)
+                    ? filteredUsers
+                    : filteredUsers.sublist(startIndex, endIndex);
+
                 final isWide = constraints.maxWidth >= 900;
-                if (isWide) {
-                  return _buildDesktopTable(filteredUsers);
-                } else {
-                  return _buildMobileCardList(filteredUsers);
-                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    isWide
+                        ? _buildDesktopTable(displayed)
+                        : _buildMobileCardList(displayed),
+                    if (!isSearching && totalCount > _pageSize) ...[
+                      const SizedBox(height: 14),
+                      _buildPaginationBar(
+                        currentPage: currentPage,
+                        totalCount: totalCount,
+                        pageSize: _pageSize,
+                        isLoading: _isLoading,
+                        itemName: 'operators',
+                        onPageChanged: (p) => setState(() => _currentPage = p),
+                      ),
+                    ],
+                  ],
+                );
               },
             ),
         ],
       ),
     );
       },
+    );
+  }
+
+  /// Clean, minimal & strictly mobile-responsive pagination bar
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalCount,
+    required int pageSize,
+    required bool isLoading,
+    required String itemName,
+    required ValueChanged<int> onPageChanged,
+  }) {
+    if (totalCount <= pageSize) {
+      if (totalCount > 0) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: Center(
+            child: Text(
+              'Showing all $totalCount $itemName',
+              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    final totalPages = (totalCount / pageSize).ceil().clamp(1, 9999);
+    final startIndex = currentPage * pageSize + 1;
+    final endIndex = ((currentPage + 1) * pageSize).clamp(0, totalCount);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12, bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 360;
+
+          final infoText = Text(
+            'Showing $startIndex–$endIndex of $totalCount $itemName',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+
+          final controls = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (currentPage > 0 && !isLoading)
+                    ? () => onPageChanged(currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isLoading ? '...' : 'Page ${currentPage + 1} of $totalPages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (currentPage < totalPages - 1 && !isLoading)
+                    ? () => onPageChanged(currentPage + 1)
+                    : null,
+              ),
+            ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                infoText,
+                const SizedBox(height: 6),
+                controls,
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              infoText,
+              controls,
+            ],
+          );
+        },
+      ),
     );
   }
 

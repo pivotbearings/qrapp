@@ -18,6 +18,9 @@ class _AdminAuditLogsViewState extends State<AdminAuditLogsView> {
   List<Map<String, dynamic>> _logs = [];
   bool _isLoading = true;
   String? _errorMessage;
+  int _currentPage = 0;
+  bool _hasNextPage = false;
+  static const int _pageSize = 10;
 
   @override
   void initState() {
@@ -25,17 +28,29 @@ class _AdminAuditLogsViewState extends State<AdminAuditLogsView> {
     _loadLogs();
   }
 
-  Future<void> _loadLogs() async {
+  Future<void> _loadLogs({int? page}) async {
+    final targetPage = page ?? _currentPage;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final res = await SupabaseService.fetchAdminAuditLogs(limit: 50);
+      // Database loads 10 entries first when user comes to the page
+      final res = await SupabaseService.fetchAdminAuditLogs(
+        limit: _pageSize + 1,
+        offset: targetPage * _pageSize,
+      );
       if (mounted) {
         setState(() {
-          _logs = res;
+          if (res.length > _pageSize) {
+            _hasNextPage = true;
+            _logs = res.take(_pageSize).toList();
+          } else {
+            _hasNextPage = false;
+            _logs = res;
+          }
+          _currentPage = targetPage;
           _isLoading = false;
         });
       }
@@ -223,10 +238,79 @@ class _AdminAuditLogsViewState extends State<AdminAuditLogsView> {
                 }
               },
             ),
+            if (_currentPage > 0 || _hasNextPage) ...[
+              const SizedBox(height: 14),
+              _buildPaginationBar(),
+            ],
         ],
       ),
     );
       },
+    );
+  }
+
+  Widget _buildPaginationBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Page ${_currentPage + 1}',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Row(
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (_currentPage > 0 && !_isLoading)
+                    ? () => _loadLogs(page: _currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _isLoading ? '...' : 'Page ${_currentPage + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (_hasNextPage && !_isLoading)
+                    ? () => _loadLogs(page: _currentPage + 1)
+                    : null,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -40,7 +40,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _NavTabItem(title: 'Users / Customers', icon: Icons.people_alt_rounded, subtitle: 'Role-Based Access & Module Permissions'),
     _NavTabItem(title: 'Verification Proofs', icon: Icons.photo_library, subtitle: 'Signed Private Images'),
     _NavTabItem(title: 'Company Settings', icon: Icons.settings, subtitle: 'Identity & Configuration'),
-    _NavTabItem(title: 'Reward Points', icon: Icons.stars_rounded, subtitle: 'Conversion Rate & Payouts'),
+    _NavTabItem(title: 'Reward Points', icon: Icons.stars, subtitle: 'Conversion Rate & Payouts'),
   ];
 
   @override

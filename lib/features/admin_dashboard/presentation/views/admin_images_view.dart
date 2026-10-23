@@ -19,6 +19,9 @@ class _AdminImagesViewState extends State<AdminImagesView> {
   List<Map<String, dynamic>> _images = [];
   bool _isLoading = true;
   String? _errorMessage;
+  int _currentPage = 0;
+  bool _hasNextPage = false;
+  static const int _pageSize = 10;
 
   @override
   void initState() {
@@ -32,7 +35,9 @@ class _AdminImagesViewState extends State<AdminImagesView> {
     super.dispose();
   }
 
-  Future<void> _loadImages({bool silent = false}) async {
+  Future<void> _loadImages({bool silent = false, int? page}) async {
+    final targetPage = page ?? _currentPage;
+    final isSearching = _searchCtrl.text.trim().isNotEmpty;
     if (!silent) {
       setState(() {
         _isLoading = true;
@@ -41,10 +46,24 @@ class _AdminImagesViewState extends State<AdminImagesView> {
     }
 
     try {
-      final res = await SupabaseService.fetchVerificationImages(limit: 60);
+      // Database loads 10 entries first when user comes to the page (not applicable for search bar)
+      final limit = isSearching ? 100 : _pageSize + 1;
+      final offset = isSearching ? 0 : targetPage * _pageSize;
+
+      final res = await SupabaseService.fetchVerificationImages(
+        limit: limit,
+        offset: offset,
+      );
       if (mounted) {
         setState(() {
-          _images = res;
+          if (!isSearching && res.length > _pageSize) {
+            _hasNextPage = true;
+            _images = res.take(_pageSize).toList();
+          } else {
+            _hasNextPage = false;
+            _images = res;
+          }
+          _currentPage = isSearching ? 0 : targetPage;
           _isLoading = false;
         });
       }
@@ -419,10 +438,79 @@ class _AdminImagesViewState extends State<AdminImagesView> {
                     );
                   },
                 ),
+              if (_searchCtrl.text.isEmpty && (_currentPage > 0 || _hasNextPage)) ...[
+                const SizedBox(height: 16),
+                _buildPaginationBar(),
+              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildPaginationBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Page ${_currentPage + 1}',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Row(
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (_currentPage > 0 && !_isLoading)
+                    ? () => _loadImages(page: _currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _isLoading ? '...' : 'Page ${_currentPage + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (_hasNextPage && !_isLoading)
+                    ? () => _loadImages(page: _currentPage + 1)
+                    : null,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

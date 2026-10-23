@@ -22,7 +22,7 @@ class _AdminItemMasterViewState extends State<AdminItemMasterView> {
   final TextEditingController _searchCtrl = TextEditingController();
 
   int _currentPage = 1;
-  static const int _pageSize = 20;
+  static const int _pageSize = 10;
   String _searchQuery = '';
 
   @override
