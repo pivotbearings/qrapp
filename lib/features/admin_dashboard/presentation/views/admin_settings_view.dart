@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
-// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
-import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../../../core/services/web_image_picker.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -155,45 +153,32 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
   Future<void> _pickWebPFile() async {
     try {
       if (kIsWeb) {
-        final uploadInput = html.FileUploadInputElement()
-          ..accept = '.webp,image/webp,image/png,image/jpeg';
-        uploadInput.click();
+        final picked = await WebImagePicker.pickImage();
+        if (picked == null) return;
 
-        uploadInput.onChange.listen((e) {
-          final files = uploadInput.files;
-          if (files == null || files.isEmpty) return;
-          final file = files[0];
-          final reader = html.FileReader();
+        final bytes = picked.bytes;
+        final isWebP = AdBannerService.isWebPBytes(bytes) ||
+            picked.name.toLowerCase().endsWith('.webp');
+        final base64Str = base64Encode(bytes);
+        final mimeType = isWebP ? 'image/webp' : picked.mimeType;
 
-          reader.onLoadEnd.listen((e) {
-            if (reader.result == null) return;
-            final bytes = Uint8List.fromList(reader.result as List<int>);
-            final isWebP = AdBannerService.isWebPBytes(bytes) ||
-                file.name.toLowerCase().endsWith('.webp');
-            final base64Str = base64Encode(bytes);
-            final mimeType = isWebP ? 'image/webp' : file.type;
-
-            setState(() {
-              _adBannerImage = 'data:$mimeType;base64,$base64Str';
-              _isAdBannerWebPValid = isWebP;
-              _uploadedFileName = file.name;
-              _uploadedFileSizeKb = (bytes.lengthInBytes / 1024).toStringAsFixed(1);
-              _adBannerUrlCtrl.clear();
-            });
-
-            if (mounted) {
-              if (isWebP) {
-                AppSnackBar.showSuccess(context, 'WebP image loaded and verified successfully.');
-              } else {
-                AppSnackBar.showInfo(context, 'Image loaded. Note: WebP format is strongly recommended for best mobile performance.');
-              }
-            }
-          });
-
-          reader.readAsArrayBuffer(file);
+        setState(() {
+          _adBannerImage = 'data:$mimeType;base64,$base64Str';
+          _isAdBannerWebPValid = isWebP;
+          _uploadedFileName = picked.name;
+          _uploadedFileSizeKb = (bytes.lengthInBytes / 1024).toStringAsFixed(1);
+          _adBannerUrlCtrl.clear();
         });
+
+        if (mounted) {
+          if (isWebP) {
+            AppSnackBar.showSuccess(context, 'WebP image loaded and verified successfully.');
+          } else {
+            AppSnackBar.showInfo(context, 'Image loaded. Note: WebP format is strongly recommended for best mobile performance.');
+          }
+        }
       } else {
-        AppSnackBar.showInfo(context, 'Please configure via Direct WebP URL below.');
+        AppSnackBar.showInfo(context, 'On mobile, please configure the banner using the Image URL field below.');
       }
     } catch (e) {
       if (mounted) {
