@@ -6,6 +6,7 @@ import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../rewards/domain/models/reward_models.dart';
 import '../../../rewards/data/services/reward_service.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 
 /// Pivot Bearings India - Admin Reward & Payouts Workstation
 ///
@@ -132,6 +133,9 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
     final minRedeem = int.tryParse(_minRedeemCtrl.text.trim()) ?? 50;
     final dailyCap = int.tryParse(_dailyLimitCtrl.text.trim()) ?? 50;
 
+    // Immediately synchronize anti-fraud false QR scan threshold
+    await AntiFraudService.setFraudLimit(dailyCap);
+
     setState(() => _isSavingSettings = true);
 
     try {
@@ -150,7 +154,7 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
         if (ok) {
           AppSnackBar.showSuccess(
             context,
-            'REWARD SETTINGS SAVED: 10 Points = ₹${inrPer10.toStringAsFixed(2)} synchronized!',
+            'SETTINGS SAVED: Anti-Fraud Limit set to $dailyCap false scans. 10 Pts = ₹${inrPer10.toStringAsFixed(2)} synchronized!',
           );
           _loadAllData();
         } else {
@@ -1090,12 +1094,43 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
 
                     const SizedBox(height: 12),
 
-                    // Daily limit
-                    _buildFieldLabel('Anti-Fraud Daily Scan Limit (per user):'),
+                    // Daily Anti-Fraud Scan Limit
+                    _buildFieldLabel('Anti-Fraud False QR Scan Limit (per user):'),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'Maximum false/invalid QR code scans allowed before locking the user scanner and issuing account ban warnings.',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ),
                     TextFormField(
                       controller: _dailyLimitCtrl,
                       keyboardType: TextInputType.number,
-                      decoration: _inputDeco('e.g. 50 scans/day'),
+                      decoration: _inputDeco('e.g. 3 or 50 scans'),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () async {
+                          await AntiFraudService.resetInvalidScanCount();
+                          if (mounted) {
+                            AppSnackBar.showSuccess(
+                              context,
+                              'Test Anti-Fraud Counter reset to 0 for current user.',
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
+                        label: const Text(
+                          'Reset Test Fraud Scan Counter to 0',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 16),

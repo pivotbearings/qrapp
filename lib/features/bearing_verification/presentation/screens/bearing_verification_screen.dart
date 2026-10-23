@@ -397,10 +397,16 @@ class _BearingVerificationScreenState extends State<BearingVerificationScreen> {
                 )
               else if (isCurrentlyIn)
                 IndustrialButton.danger(
-                  label: 'SCAN QR TO MARK BEARING OUT',
-                  icon: Icons.qr_code_scanner,
+                  label: 'MARK BEARING OUT & SUBMIT',
+                  icon: Icons.logout,
                   isLoading: _isNavigating,
-                  onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.qrScanner),
+                  onPressed: () {
+                    Navigator.pushNamed(
+                      context,
+                      AppRoutes.outConfirmation,
+                      arguments: widget.bearingId,
+                    );
+                  },
                 )
               else
                 Container(

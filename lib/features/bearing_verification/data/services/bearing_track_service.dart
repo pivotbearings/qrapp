@@ -65,8 +65,20 @@ class BearingTrackService {
           }
           res = BearingTrackResult.fromJson(data, rawPayload: cleanPayload);
           // Sync with local & admin QR registry
+          final bId = res.bearingId ?? _extractBearingId(cleanPayload);
+          final prefs = await SharedPreferences.getInstance();
+          if (res.action == 'BEARING_OUT') {
+            await prefs.setString('$_trackStatePrefix$bId', _finalOutState);
+            await prefs.setBool('pbi_bearing_permanently_out_$bId', true);
+            await prefs.setString('pbi_bearing_state_$bId', 'CURRENTLY_OUT');
+            await prefs.setString('$_trackOutTimePrefix$bId', (res.outTimestamp ?? DateTime.now()).toIso8601String());
+          } else if (res.action == 'BEARING_IN') {
+            await prefs.setString('$_trackStatePrefix$bId', 'IN');
+            await prefs.setString('pbi_bearing_state_$bId', 'CURRENTLY_IN');
+            await prefs.setString('$_trackInTimePrefix$bId', (res.inTimestamp ?? DateTime.now()).toIso8601String());
+          }
           await QrManagementRepository.syncBearingStateChange(
-            bearingId: res.bearingId ?? _extractBearingId(cleanPayload),
+            bearingId: bId,
             newState: res.action == 'BEARING_IN' ? 'CURRENTLY_IN' : 'CURRENTLY_OUT',
             inTimestamp: res.inTimestamp,
             outTimestamp: res.outTimestamp,
@@ -151,7 +163,14 @@ class BearingTrackService {
         ? notes.trim()
         : prefs.getString(notesKey);
 
-    final currentState = prefs.getString(stateKey) ?? 'OUT';
+    final localState = prefs.getString(stateKey) ?? prefs.getString('pbi_bearing_state_$bearingId');
+    final qrRecState = (QrManagementRepository.findQrRecord(bearingId) ??
+        QrManagementRepository.findQrRecord(cleanPayload))?['current_lifecycle_state']?.toString();
+    final currentState = (localState == 'IN' || localState == 'CURRENTLY_IN' || qrRecState == 'CURRENTLY_IN')
+        ? 'IN'
+        : (localState == _finalOutState || localState == 'CURRENTLY_OUT' || qrRecState == 'CURRENTLY_OUT')
+            ? _finalOutState
+            : (prefs.getString(stateKey) ?? 'OUT');
     final now = DateTime.now();
 
     // Resolve model info first
@@ -253,6 +272,7 @@ class BearingTrackService {
       await prefs.setString(stateKey, _finalOutState);
       await prefs.setBool('pbi_bearing_permanently_out_$bearingId', true);
       await prefs.setString(outTimeKey, now.toIso8601String());
+      await prefs.setString('pbi_bearing_state_$bearingId', 'CURRENTLY_OUT');
 
       if (SupabaseService.isInitialized) {
         try {
@@ -314,6 +334,7 @@ class BearingTrackService {
       // =======================================================================
       await prefs.setString(stateKey, 'IN');
       await prefs.setString(inTimeKey, now.toIso8601String());
+      await prefs.setString('pbi_bearing_state_$bearingId', 'CURRENTLY_IN');
 
       if (SupabaseService.isInitialized) {
         try {

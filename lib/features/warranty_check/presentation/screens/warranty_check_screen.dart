@@ -12,6 +12,7 @@ import '../../../bearing_verification/data/repositories/bearing_repository.dart'
 import '../../../bearing_verification/domain/models/qr_verification_result.dart';
 import '../../../bearing_verification/presentation/widgets/bearing_out_email_dialog.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 
 class WarrantyCheckScreen extends StatefulWidget {
   final String? initialBearingId;
@@ -107,6 +108,13 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
       final model = results[1] as BearingModel?;
 
       if (mounted) {
+        if (verifResult.status == QrVerificationStatus.qrUnknownOrInvalid || verifResult.isInvalid) {
+          await AntiFraudService.recordInvalidScan(
+            scannedPayload: clean,
+            reason: verifResult.errorMessage ?? 'Unrecognized QR code in warranty search',
+          );
+        }
+
         final b = model ??
             BearingModel(
               id: clean,
@@ -139,7 +147,19 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
     }
   }
 
-  void _openQrScanner() {
+  Future<void> _openQrScanner() async {
+    final locked = await AntiFraudService.isScannerLocked();
+    if (locked) {
+      if (mounted) {
+        AppSnackBar.showError(
+          context,
+          'Scanner locked: You must not scan any false QR codes from now else your ID will be banned.',
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

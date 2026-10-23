@@ -65,6 +65,9 @@ class QrVerificationResult {
     this.rewardClaim,
   });
 
+  bool get isInvalid => status == QrVerificationStatus.qrUnknownOrInvalid;
+  bool get isValid => status != QrVerificationStatus.qrUnknownOrInvalid && status != QrVerificationStatus.networkUnavailable;
+
   QrVerificationResult copyWithReward(RewardClaimResult? claim) {
     return QrVerificationResult(
       status: status,

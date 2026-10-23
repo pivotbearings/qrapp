@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../domain/models/reward_models.dart';
+import '../../../../core/services/anti_fraud_service.dart';
 
 /// Pivot Bearings India - Authoritative Reward Service
 ///
@@ -282,6 +283,9 @@ class RewardService {
     required int dailyMaxScans,
     String? termsAndConditions,
   }) async {
+    // Update anti-fraud threshold
+    await AntiFraudService.setFraudLimit(dailyMaxScans);
+
     if (SupabaseService.isInitialized) {
       try {
         final dynamic res = await SupabaseService.client.rpc(
@@ -298,6 +302,18 @@ class RewardService {
         );
 
         if (res != null && res is Map && res['success'] == true) {
+          final prefs = await SharedPreferences.getInstance();
+          final settings = RewardSettings(
+            pointsBaseUnit: pointsBaseUnit,
+            inrPerBaseUnit: inrPerBaseUnit,
+            pointsPerFirstScan: pointsPerFirstScan,
+            minRedemptionPoints: minRedemptionPoints,
+            isEnabled: isEnabled,
+            dailyMaxScans: dailyMaxScans,
+            termsAndConditions: termsAndConditions ??
+                'Pivot Bearings reserves the right to modify, adjust, or change the reward point conversion value (Points to INR rate) and program rules at any time without prior notice.',
+          );
+          await prefs.setString(_prefKeyOfflineSettings, jsonEncode(settings.toJson()));
           return true;
         }
       } catch (e) {
