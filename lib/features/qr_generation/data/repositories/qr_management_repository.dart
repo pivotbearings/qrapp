@@ -25,6 +25,31 @@ class QrManagementRepository {
     _inMemoryQrCodes.clear();
   }
 
+  /// Finds a QR record by ID or payload value case-insensitively
+  static Map<String, dynamic>? findQrRecord(String id) {
+    final clean = id.trim().toUpperCase();
+    if (clean.isEmpty) return null;
+    for (final q in _inMemoryQrCodes) {
+      final bId = q['bearing_id']?.toString().toUpperCase();
+      final pVal = q['payload_value']?.toString().toUpperCase();
+      if (bId == clean || pVal == clean) {
+        return q;
+      }
+    }
+    // Also try alphanumeric match
+    final cleanAlpha = clean.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    if (cleanAlpha.length >= 8) {
+      for (final q in _inMemoryQrCodes) {
+        final bAlpha = q['bearing_id']?.toString().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+        final pAlpha = q['payload_value']?.toString().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+        if (bAlpha == cleanAlpha || pAlpha == cleanAlpha) {
+          return q;
+        }
+      }
+    }
+    return null;
+  }
+
   /// Loads locally saved batches and QR codes from browser/device storage
   static Future<void> loadFromLocalStorage() async {
     try {
@@ -267,6 +292,8 @@ class QrManagementRepository {
     required String plantLocation,
     required int quantity,
     String modelNumber = 'PBI-6204-ZZ',
+    int warrantyDurationMonths = 6,
+    String? productName,
     String? defaultWarrantyPlanId,
   }) async {
     if (quantity < 1 || quantity > 5000) {
@@ -275,6 +302,23 @@ class QrManagementRepository {
 
     await loadFromLocalStorage();
 
+    // Resolve matching warranty plan if plan ID not supplied
+    String? resolvedPlanId = defaultWarrantyPlanId;
+    if (resolvedPlanId == null && SupabaseService.isInitialized) {
+      try {
+        final plans = await SupabaseService.client
+            .from('warranty_plans')
+            .select('id, duration_months')
+            .eq('duration_months', warrantyDurationMonths)
+            .limit(1);
+        if (plans.isNotEmpty && plans[0]['id'] != null) {
+          resolvedPlanId = plans[0]['id'].toString();
+        }
+      } catch (_) {}
+    }
+
+    final String warrantyTitle = '$warrantyDurationMonths Months Industrial Warranty';
+
     if (SupabaseService.isInitialized) {
       try {
         final res = await SupabaseService.client.rpc('generate_qr_batch', params: {
@@ -282,7 +326,7 @@ class QrManagementRepository {
           'p_plant_location': plantLocation,
           'p_quantity': quantity,
           'p_model_number': modelNumber,
-          'p_default_warranty_plan_id': defaultWarrantyPlanId,
+          'p_default_warranty_plan_id': resolvedPlanId,
         });
         final map = Map<String, dynamic>.from(res as Map);
 
@@ -295,10 +339,11 @@ class QrManagementRepository {
               'bearing_id': idStr,
               'batch_code': batchCode,
               'model_number': modelNumber,
+              'product_name': productName,
               'plant_location': plantLocation,
-              'warranty_plan_id': defaultWarrantyPlanId,
-              'warranty_title': '6 Months Warranty',
-              'duration_months': 6,
+              'warranty_plan_id': resolvedPlanId,
+              'warranty_title': warrantyTitle,
+              'duration_months': warrantyDurationMonths,
               'current_lifecycle_state': 'NOT_ACTIVATED',
               'first_in_timestamp': null,
               'warranty_expiry_timestamp': null,
@@ -317,7 +362,7 @@ class QrManagementRepository {
                 batchCode: batchCode,
                 modelNumber: modelNumber,
                 plantLocation: plantLocation,
-                warrantyDurationMonths: 6,
+                warrantyDurationMonths: warrantyDurationMonths,
                 state: BearingLifecycleState.notActivated,
               ),
             );
@@ -343,7 +388,9 @@ class QrManagementRepository {
             plantLocation: plantLocation,
             quantity: quantity,
             modelNumber: modelNumber,
-            defaultWarrantyPlanId: defaultWarrantyPlanId,
+            warrantyDurationMonths: warrantyDurationMonths,
+            productName: productName,
+            defaultWarrantyPlanId: resolvedPlanId,
           );
         } catch (_) {
           return await _mockGenerateBatch(
@@ -351,7 +398,9 @@ class QrManagementRepository {
             plantLocation: plantLocation,
             quantity: quantity,
             modelNumber: modelNumber,
-            defaultWarrantyPlanId: defaultWarrantyPlanId,
+            warrantyDurationMonths: warrantyDurationMonths,
+            productName: productName,
+            defaultWarrantyPlanId: resolvedPlanId,
           );
         }
       }
@@ -361,7 +410,9 @@ class QrManagementRepository {
         plantLocation: plantLocation,
         quantity: quantity,
         modelNumber: modelNumber,
-        defaultWarrantyPlanId: defaultWarrantyPlanId,
+        warrantyDurationMonths: warrantyDurationMonths,
+        productName: productName,
+        defaultWarrantyPlanId: resolvedPlanId,
       );
     }
   }
@@ -372,6 +423,8 @@ class QrManagementRepository {
     required String plantLocation,
     required int quantity,
     required String modelNumber,
+    int warrantyDurationMonths = 6,
+    String? productName,
     String? defaultWarrantyPlanId,
   }) async {
     // 1. Ensure authenticated session for inserting into qr_batches and qr_codes
@@ -396,7 +449,8 @@ class QrManagementRepository {
     try {
       final plans = await SupabaseService.client
           .from('warranty_plans')
-          .select('id')
+          .select('id, duration_months')
+          .eq('duration_months', warrantyDurationMonths)
           .limit(1);
       if (plans.isNotEmpty && plans[0]['id'] != null) {
         planId = plans[0]['id'].toString();
@@ -432,6 +486,8 @@ class QrManagementRepository {
       batchId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
     }
 
+    final String warrantyTitle = '$warrantyDurationMonths Months Industrial Warranty';
+
     // 4. Generate totally randomised 12-character encrypted-style QR values (zero duplicates)
     final List<String> generatedIds = [];
     final List<Map<String, dynamic>> records = [];
@@ -464,10 +520,11 @@ class QrManagementRepository {
         'bearing_id': serial,
         'batch_code': batchCode,
         'model_number': modelNumber,
+        'product_name': productName,
         'plant_location': plantLocation,
         'warranty_plan_id': planId,
-        'warranty_title': '6 Months Warranty',
-        'duration_months': 6,
+        'warranty_title': warrantyTitle,
+        'duration_months': warrantyDurationMonths,
         'current_lifecycle_state': 'NOT_ACTIVATED',
         'first_in_timestamp': null,
         'warranty_expiry_timestamp': null,
@@ -486,7 +543,7 @@ class QrManagementRepository {
           batchCode: batchCode,
           modelNumber: modelNumber,
           plantLocation: plantLocation,
-          warrantyDurationMonths: 6,
+          warrantyDurationMonths: warrantyDurationMonths,
           state: BearingLifecycleState.notActivated,
         ),
       );
@@ -1021,10 +1078,13 @@ class QrManagementRepository {
     required String plantLocation,
     required int quantity,
     required String modelNumber,
+    int warrantyDurationMonths = 6,
+    String? productName,
     String? defaultWarrantyPlanId,
   }) async {
     final List<String> generatedIds = [];
     final Set<String> uniqueIds = {};
+    final String warrantyTitle = '$warrantyDurationMonths Months Industrial Warranty';
 
     for (int i = 0; i < quantity; i++) {
       String id;
@@ -1042,10 +1102,11 @@ class QrManagementRepository {
         'bearing_id': id,
         'batch_code': batchCode,
         'model_number': modelNumber,
+        'product_name': productName,
         'plant_location': plantLocation,
         'warranty_plan_id': defaultWarrantyPlanId,
-        'warranty_title': '6 Months Warranty',
-        'duration_months': 6,
+        'warranty_title': warrantyTitle,
+        'duration_months': warrantyDurationMonths,
         'current_lifecycle_state': 'NOT_ACTIVATED',
         'first_in_timestamp': null,
         'warranty_expiry_timestamp': null,
@@ -1064,7 +1125,7 @@ class QrManagementRepository {
           batchCode: batchCode,
           modelNumber: modelNumber,
           plantLocation: plantLocation,
-          warrantyDurationMonths: 6,
+          warrantyDurationMonths: warrantyDurationMonths,
           state: BearingLifecycleState.notActivated,
         ),
       );

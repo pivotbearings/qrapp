@@ -59,6 +59,7 @@ class BearingTrackResult {
   final String action; // 'BEARING_IN' or 'BEARING_OUT'
   final String? bearingId;
   final String? modelNumber;
+  final String? productName;
   final String? batchCode;
   final String? plantLocation;
   final int cycleNumber;
@@ -68,6 +69,8 @@ class BearingTrackResult {
   final int durationDays;
   final int durationHours;
   final int durationMinutes;
+  final int? warrantyDurationMonths;
+  final DateTime? warrantyExpiryTimestamp;
   final String? message;
   final String? notes;
   final List<BearingCycleRecord> lifecycleHistory;
@@ -79,6 +82,7 @@ class BearingTrackResult {
     required this.action,
     this.bearingId,
     this.modelNumber,
+    this.productName,
     this.batchCode,
     this.plantLocation,
     this.cycleNumber = 1,
@@ -88,6 +92,8 @@ class BearingTrackResult {
     this.durationDays = 0,
     this.durationHours = 0,
     this.durationMinutes = 0,
+    this.warrantyDurationMonths,
+    this.warrantyExpiryTimestamp,
     this.message,
     this.notes,
     this.lifecycleHistory = const [],
@@ -101,6 +107,7 @@ class BearingTrackResult {
       action: action,
       bearingId: bearingId,
       modelNumber: modelNumber,
+      productName: productName,
       batchCode: batchCode,
       plantLocation: plantLocation,
       cycleNumber: cycleNumber,
@@ -110,6 +117,8 @@ class BearingTrackResult {
       durationDays: durationDays,
       durationHours: durationHours,
       durationMinutes: durationMinutes,
+      warrantyDurationMonths: warrantyDurationMonths,
+      warrantyExpiryTimestamp: warrantyExpiryTimestamp,
       message: message,
       notes: notes,
       lifecycleHistory: lifecycleHistory,
@@ -124,6 +133,7 @@ class BearingTrackResult {
       action: action,
       bearingId: bearingId,
       modelNumber: modelNumber,
+      productName: productName,
       batchCode: batchCode,
       plantLocation: plantLocation,
       cycleNumber: cycleNumber,
@@ -133,6 +143,8 @@ class BearingTrackResult {
       durationDays: durationDays,
       durationHours: durationHours,
       durationMinutes: durationMinutes,
+      warrantyDurationMonths: warrantyDurationMonths,
+      warrantyExpiryTimestamp: warrantyExpiryTimestamp,
       message: message,
       notes: newNotes,
       lifecycleHistory: lifecycleHistory,
@@ -163,6 +175,7 @@ class BearingTrackResult {
       action: json['action']?.toString() ?? 'INVALID',
       bearingId: json['bearing_id']?.toString() ?? json['scanned_id']?.toString(),
       modelNumber: json['model_number']?.toString() ?? 'PBI-6204-ZZ',
+      productName: json['product_name']?.toString() ?? json['item_name']?.toString(),
       batchCode: json['batch_code']?.toString() ?? 'BATCH-ACTIVE',
       plantLocation: json['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex',
       cycleNumber: (json['cycle_number'] as num?)?.toInt() ?? 1,
@@ -176,6 +189,11 @@ class BearingTrackResult {
       durationDays: durDays,
       durationHours: durHours,
       durationMinutes: durMinutes,
+      warrantyDurationMonths: (json['duration_months'] as num?)?.toInt() ??
+          (json['warranty_duration_months'] as num?)?.toInt(),
+      warrantyExpiryTimestamp: json['warranty_expiry_timestamp'] != null
+          ? DateTime.tryParse(json['warranty_expiry_timestamp'].toString())
+          : null,
       message: json['message']?.toString(),
       notes: json['notes']?.toString(),
       lifecycleHistory: historyList,
@@ -199,6 +217,9 @@ class BearingTrackResult {
     DateTime? inTimestamp,
     DateTime? outTimestamp,
     String? modelNumber,
+    String? productName,
+    int? warrantyDurationMonths,
+    DateTime? warrantyExpiryTimestamp,
     String? message,
     String? rawPayload,
   }) {
@@ -207,6 +228,9 @@ class BearingTrackResult {
       action: 'ALREADY_OUT',
       bearingId: bearingId,
       modelNumber: modelNumber,
+      productName: productName,
+      warrantyDurationMonths: warrantyDurationMonths,
+      warrantyExpiryTimestamp: warrantyExpiryTimestamp,
       inTimestamp: inTimestamp,
       outTimestamp: outTimestamp,
       message: message ?? 'This bearing has already been marked out and cannot be tracked again.',

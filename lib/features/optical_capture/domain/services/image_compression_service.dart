@@ -71,15 +71,14 @@ class ImageCompressionService {
       }
     }
 
-    // 4. Encode to WebP (quality 70–82 adaptive) with fallback
+    // 4. Encode to high-speed JPEG (finishes in milliseconds, universal platform support)
     Uint8List compressedBytes;
-    String format = 'webp';
+    String format = 'jpeg';
     try {
-      compressedBytes = Uint8List.fromList(img.encodeWebP(processed, quality: quality));
+      compressedBytes = Uint8List.fromList(img.encodeJpg(processed, quality: quality > 0 ? quality : 70));
     } catch (_) {
-      // Graceful fallback to JPEG if WebP encoder meets unexpected platform limitations
-      compressedBytes = Uint8List.fromList(img.encodeJpg(processed, quality: quality));
-      format = 'jpeg';
+      compressedBytes = Uint8List.fromList(img.encodePng(processed));
+      format = 'png';
     }
 
     // Validate output

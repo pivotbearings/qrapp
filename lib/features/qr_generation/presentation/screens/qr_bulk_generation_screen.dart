@@ -129,6 +129,8 @@ class _QrBulkGenerationScreenState extends State<QrBulkGenerationScreen> {
         plantLocation: 'Plant 02 — Chakan Industrial Complex',
         quantity: count,
         modelNumber: _selectedItem!.itemCode,
+        warrantyDurationMonths: _effectiveWarrantyMonths,
+        productName: _selectedItem!.itemName,
         defaultWarrantyPlanId: null,
       );
 

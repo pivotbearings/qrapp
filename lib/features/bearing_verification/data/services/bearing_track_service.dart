@@ -7,6 +7,7 @@ import '../../../qr_generation/domain/services/bearing_encryption_key_service.da
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 
 import '../../../rewards/data/services/reward_service.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
 
 /// Pivot Bearings India - Bearing Tracking Service
 ///
@@ -46,6 +47,22 @@ class BearingTrackService {
 
         if (rpcRes != null && rpcRes is Map) {
           final data = Map<String, dynamic>.from(rpcRes);
+          await QrManagementRepository.loadFromLocalStorage();
+          final localQr = QrManagementRepository.findQrRecord(cleanPayload) ??
+              QrManagementRepository.findQrRecord(data['bearing_id']?.toString() ?? '');
+          if (localQr != null) {
+            data['model_number'] = localQr['model_number'] ?? data['model_number'];
+            data['product_name'] = localQr['product_name'] ?? data['product_name'];
+            data['duration_months'] = localQr['duration_months'] ?? data['duration_months'];
+            data['batch_code'] = localQr['batch_code'] ?? data['batch_code'];
+            data['plant_location'] = localQr['plant_location'] ?? data['plant_location'];
+          }
+          if (data['product_name'] == null && data['model_number'] != null) {
+            final catItem = ItemMasterRepository().findByCode(data['model_number'].toString());
+            if (catItem != null) {
+              data['product_name'] = catItem.itemName;
+            }
+          }
           res = BearingTrackResult.fromJson(data, rawPayload: cleanPayload);
           // Sync with local & admin QR registry
           await QrManagementRepository.syncBearingStateChange(
@@ -141,8 +158,19 @@ class BearingTrackService {
     String model = 'PBI-6204-ZZ';
     String batch = 'BATCH-2026-OCT-A';
     String plant = 'Plant 02 — Chakan Industrial Complex';
+    String? productName;
+    int warrantyMonths = 6;
 
-    if (isKnownSeed) {
+    await QrManagementRepository.loadFromLocalStorage();
+    final qrRec = QrManagementRepository.findQrRecord(bearingId) ??
+        QrManagementRepository.findQrRecord(cleanPayload);
+    if (qrRec != null) {
+      model = qrRec['model_number']?.toString() ?? model;
+      batch = qrRec['batch_code']?.toString() ?? batch;
+      plant = qrRec['plant_location']?.toString() ?? plant;
+      productName = qrRec['product_name']?.toString() ?? qrRec['item_name']?.toString();
+      warrantyMonths = (qrRec['duration_months'] as num?)?.toInt() ?? warrantyMonths;
+    } else if (isKnownSeed) {
       final info = knownRegisteredIds[bearingId]!;
       model = info['model']!;
       batch = info['batch']!;
@@ -151,6 +179,16 @@ class BearingTrackService {
       final decoded = BearingEncryptionKeyService.decodeKey(bearingId);
       final modelTok = decoded['model_token'] ?? '6204';
       model = 'PBI-$modelTok-ZZ';
+    }
+
+    if (productName == null) {
+      final catItem = ItemMasterRepository().findByCode(model);
+      if (catItem != null) {
+        productName = catItem.itemName;
+        if (warrantyMonths == 6 && catItem.defaultWarrantyMonths > 0) {
+          warrantyMonths = catItem.defaultWarrantyMonths;
+        }
+      }
     }
 
     final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$bearingId') == true;
@@ -166,6 +204,8 @@ class BearingTrackService {
       return BearingTrackResult.alreadyOut(
         bearingId: bearingId,
         modelNumber: model,
+        productName: productName,
+        warrantyDurationMonths: warrantyMonths,
         inTimestamp: storedIn,
         outTimestamp: storedOut,
         message: 'bearing marked as out, cant scan again.',
@@ -252,6 +292,8 @@ class BearingTrackService {
         action: 'BEARING_OUT',
         bearingId: bearingId,
         modelNumber: model,
+        productName: productName,
+        warrantyDurationMonths: warrantyMonths,
         batchCode: batch,
         plantLocation: plant,
         cycleNumber: cycleNum,
@@ -317,6 +359,8 @@ class BearingTrackService {
         action: 'BEARING_IN',
         bearingId: bearingId,
         modelNumber: model,
+        productName: productName,
+        warrantyDurationMonths: warrantyMonths,
         batchCode: batch,
         plantLocation: plant,
         cycleNumber: history.length + 1,

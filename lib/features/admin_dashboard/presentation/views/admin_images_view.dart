@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
@@ -97,6 +99,15 @@ class _AdminImagesViewState extends State<AdminImagesView> {
         ? 'INSTALLATION PROOF'
         : (isRemoval ? 'REMOVAL PROOF' : type);
 
+    final base64Data = img['base64_data']?.toString();
+    Uint8List? memoryBytes;
+    if (base64Data != null && base64Data.isNotEmpty) {
+      try {
+        final cleanBase64 = base64Data.contains(',') ? base64Data.split(',').last : base64Data;
+        memoryBytes = base64Decode(cleanBase64);
+      } catch (_) {}
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -141,25 +152,22 @@ class _AdminImagesViewState extends State<AdminImagesView> {
                     ),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
                   ),
-                  child: signedUrl != null
-                      ? Image.network(
-                          signedUrl,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => Center(
-                            child: Icon(
-                              Icons.broken_image,
-                              size: 64,
-                              color: isInstallation ? const Color(0xFF16A34A) : (isRemoval ? const Color(0xFFDC2626) : AppColors.primary),
-                            ),
-                          ),
-                        )
-                      : Center(
-                          child: Icon(
-                            Icons.camera_alt,
-                            size: 64,
-                            color: isInstallation ? const Color(0xFF16A34A) : (isRemoval ? const Color(0xFFDC2626) : AppColors.primary),
-                          ),
-                        ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                    child: memoryBytes != null
+                        ? Image.memory(
+                            memoryBytes,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => _buildPlaceholderGraphic(bearingId, cardColor: badgeColor),
+                          )
+                        : (signedUrl != null && signedUrl.isNotEmpty
+                            ? Image.network(
+                                signedUrl,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => _buildPlaceholderGraphic(bearingId, cardColor: badgeColor),
+                              )
+                            : _buildPlaceholderGraphic(bearingId, cardColor: badgeColor)),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text('RESOLUTION: ${width}x$height PX | FILE SIZE: ${sizeKb.toStringAsFixed(1)} KB', style: AppTypography.labelMd),
@@ -382,17 +390,34 @@ class _AdminImagesViewState extends State<AdminImagesView> {
                                     border: Border.all(color: cardBorder.withAlpha(120), width: 1.0),
                                     borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
                                   ),
-                                  child: signedUrl != null
-                                      ? Image.network(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                                    child: () {
+                                      final base64Data = img['base64_data']?.toString();
+                                      Uint8List? cardBytes;
+                                      if (base64Data != null && base64Data.isNotEmpty) {
+                                        try {
+                                          final clean = base64Data.contains(',') ? base64Data.split(',').last : base64Data;
+                                          cardBytes = base64Decode(clean);
+                                        } catch (_) {}
+                                      }
+                                      if (cardBytes != null) {
+                                        return Image.memory(
+                                          cardBytes,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => _buildPlaceholderGraphic(bearingId, cardColor: cardBorder),
+                                        );
+                                      }
+                                      if (signedUrl != null && signedUrl.isNotEmpty) {
+                                        return Image.network(
                                           signedUrl,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => Center(
-                                            child: Icon(Icons.camera_alt, color: cardBorder, size: 36),
-                                          ),
-                                        )
-                                      : Center(
-                                          child: Icon(Icons.camera_alt, color: cardBorder, size: 36),
-                                        ),
+                                          errorBuilder: (_, _, _) => _buildPlaceholderGraphic(bearingId, cardColor: cardBorder),
+                                        );
+                                      }
+                                      return _buildPlaceholderGraphic(bearingId, cardColor: cardBorder);
+                                    }(),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -508,6 +533,42 @@ class _AdminImagesViewState extends State<AdminImagesView> {
                     : null,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderGraphic(String bearingId, {required Color cardColor}) {
+    return Container(
+      width: double.infinity,
+      color: Colors.grey.shade50,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.precision_manufacturing_outlined, size: 40, color: cardColor),
+          const SizedBox(height: 6),
+          Text(
+            bearingId,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: cardColor,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'OPTICAL PROOF SECURED',
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade600,
+              letterSpacing: 0.5,
+            ),
           ),
         ],
       ),

@@ -24,7 +24,7 @@ class BearingEncryptionKeyService {
   /// Character pool for 12-character randomized "encrypted-style" QR value
   /// Includes uppercase, lowercase, numbers, and symbols: @$#[]-* (69 unique characters)
   static const String randomized12CharPool =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@\$#[]-*';
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@\$#[]-*';
 
   /// Generates a totally randomised, encrypted-style 12-character QR value
   /// Guaranteed 0 duplicates ever against an optional seen set or database manifest

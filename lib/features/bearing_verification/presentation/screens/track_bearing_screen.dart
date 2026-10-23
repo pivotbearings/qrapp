@@ -15,6 +15,7 @@ import '../../../../core/widgets/whatsapp_icon.dart';
 import '../../data/services/bearing_track_service.dart';
 import '../../domain/models/bearing_track_result.dart';
 import '../../../rewards/domain/models/reward_models.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
 
 enum TrackViewStep {
   landing,
@@ -1289,6 +1290,13 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   ],
                 ),
                 const Divider(color: Colors.black12, height: 24),
+                _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
+                _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
+                if (result.productName != null && result.productName!.isNotEmpty)
+                  _buildSpecRow('Assigned Product', result.productName!),
+                _buildSpecRow('Warranty Coverage', '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty'),
+                _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
+                _buildSpecRow('Plant Location', result.plantLocation ?? 'Plant 02 — Chakan'),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted, isSuccess: true),
                 Builder(
                   builder: (_) {
@@ -1528,6 +1536,13 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   ),
                 ),
                 const Divider(color: Colors.black12, height: 24),
+                _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
+                _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
+                if (result.productName != null && result.productName!.isNotEmpty)
+                  _buildSpecRow('Assigned Product', result.productName!),
+                _buildSpecRow('Warranty Coverage', '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty'),
+                _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
+                _buildSpecRow('Plant Location', result.plantLocation ?? 'Plant 02 — Chakan'),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted),
                 _buildSpecRow('Bearing Out Date & Time', outTimeFormatted, isDanger: true),
                 _buildSpecRow(
@@ -1889,6 +1904,13 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   ),
                 ),
                 const Divider(color: Colors.black12, height: 24),
+                _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
+                _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
+                if (result.productName != null && result.productName!.isNotEmpty)
+                  _buildSpecRow('Assigned Product', result.productName!),
+                _buildSpecRow('Warranty Coverage', '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty'),
+                _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
+                _buildSpecRow('Plant Location', result.plantLocation ?? 'Plant 02 — Chakan'),
                 if (result.inTimestamp != null)
                   _buildSpecRow('Bearing In', inTimeStr),
                 if (result.outTimestamp != null)
@@ -2129,18 +2151,28 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
             '');
     final notesLine = (storedNotes.isNotEmpty) ? '\n• *Notes:* $storedNotes' : '';
 
+    final productName = (result.productName != null && result.productName!.isNotEmpty)
+        ? result.productName!
+        : (ItemMasterRepository().findByCode(result.modelNumber ?? '')?.itemName ??
+            'Pivot Industrial Precision Bearing');
+    final warrantyCoverage = '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty';
+
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-• *Bearing ID:* ${result.bearingId ?? 'N/A'}
-• *Model Number:* ${result.modelNumber ?? 'PBI-6204-ZZ'}
-• *Bearing In:* $inTimeFormatted
-• *Bearing Out:* $outTimeFormatted
-• *Total Usage Duration:* $durationClean
+• *Bearing QR Serial:* ${result.bearingId ?? 'N/A'}
+• *Model / Part No:* ${result.modelNumber ?? 'PBI-Standard'}
+• *Assigned Product:* $productName
+• *Warranty Coverage:* $warrantyCoverage
+• *Batch Code:* ${result.batchCode ?? 'BATCH-ACTIVE'}
+• *Plant Location:* ${result.plantLocation ?? 'Plant 02 — Chakan Industrial Complex'}
+• *Bearing In (Installed):* $inTimeFormatted
+• *Bearing Out (Removed):* $outTimeFormatted
+• *Total Operating Duration:* $durationClean
 • *Completed Cycle:* Cycle #${result.cycleNumber} Closed
-• *Status:* Decommissioned / Bearing Out$notesLine
+• *Operating Status:* Decommissioned / Final Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-Authorized Bearing Usage Telemetry
+Official Authorized Bearing Traceability & Authenticity Ledger
 '''.trim();
 
     String? authNumber;

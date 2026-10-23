@@ -571,65 +571,95 @@ class SupabaseService {
 
   static final Map<String, ({String url, DateTime expiresAt})> _signedUrlCache = {};
 
-  /// Fetches verification images with authorized signed URLs
+  /// Fetches verification images with authorized signed URLs and merges local persistent proofs
   static Future<List<Map<String, dynamic>>> fetchVerificationImages({int limit = 20, int offset = 0}) async {
-    if (!_isInitialized) return [];
-    try {
-      final images = await client
-          .from('verification_images')
-          .select('''
-            id,
-            qr_code_id,
-            storage_path,
-            sha256_hash,
-            file_size_bytes,
-            width,
-            height,
-            image_type,
-            created_at,
-            qr_codes (bearing_id)
-          ''')
-          .order('created_at', ascending: false)
-          .range(offset, offset + limit - 1);
+    final List<Map<String, dynamic>> enriched = [];
+    final Set<String> seenHashes = {};
 
-      final List<Map<String, dynamic>> enriched = [];
-      for (final img in images) {
-        final map = Map<String, dynamic>.from(img);
-        final storagePath = map['storage_path']?.toString();
-        if (storagePath != null && storagePath.isNotEmpty) {
-          // Check if valid cached URL exists
-          final cached = _signedUrlCache[storagePath];
-          if (cached != null && cached.expiresAt.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
-            map['signed_url'] = cached.url;
-          } else {
-            try {
-              var signedUrl = await client.storage
-                  .from('verification-images')
-                  .createSignedUrl(storagePath, 3600);
-              if (AppConfig.storageCdnUrl != null &&
-                  AppConfig.storageCdnUrl!.isNotEmpty) {
-                final originUri = Uri.parse(signedUrl);
-                final cdnUri = Uri.parse(AppConfig.storageCdnUrl!);
-                signedUrl = originUri.replace(
-                  scheme: cdnUri.scheme,
-                  host: cdnUri.host,
-                  port: cdnUri.hasPort ? cdnUri.port : null,
-                ).toString();
+    // 1. Fetch from Supabase if initialized
+    if (_isInitialized) {
+      try {
+        final images = await client
+            .from('verification_images')
+            .select('''
+              id,
+              qr_code_id,
+              storage_path,
+              sha256_hash,
+              file_size_bytes,
+              width,
+              height,
+              image_type,
+              created_at,
+              qr_codes (bearing_id)
+            ''')
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1);
+
+        for (final img in images) {
+          final map = Map<String, dynamic>.from(img);
+          final storagePath = map['storage_path']?.toString();
+          if (storagePath != null && storagePath.isNotEmpty) {
+            // Check if valid cached URL exists
+            final cached = _signedUrlCache[storagePath];
+            if (cached != null && cached.expiresAt.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
+              map['signed_url'] = cached.url;
+            } else {
+              try {
+                var signedUrl = await client.storage
+                    .from('verification-images')
+                    .createSignedUrl(storagePath, 3600);
+                if (AppConfig.storageCdnUrl != null &&
+                    AppConfig.storageCdnUrl!.isNotEmpty) {
+                  final originUri = Uri.parse(signedUrl);
+                  final cdnUri = Uri.parse(AppConfig.storageCdnUrl!);
+                  signedUrl = originUri.replace(
+                    scheme: cdnUri.scheme,
+                    host: cdnUri.host,
+                    port: cdnUri.hasPort ? cdnUri.port : null,
+                  ).toString();
+                }
+                _signedUrlCache[storagePath] = (
+                  url: signedUrl,
+                  expiresAt: DateTime.now().add(const Duration(seconds: 3500)),
+                );
+                map['signed_url'] = signedUrl;
+              } catch (_) {}
+            }
+          }
+          final hash = map['sha256_hash']?.toString();
+          if (hash != null) seenHashes.add(hash);
+          enriched.add(map);
+        }
+      } catch (_) {}
+    }
+
+    // 2. Merge local device proofs (from camera / guest IN verification)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final localJson = prefs.getString('pbi_local_verification_proofs');
+      if (localJson != null && localJson.isNotEmpty) {
+        final decoded = jsonDecode(localJson);
+        if (decoded is List) {
+          for (final item in decoded) {
+            final map = Map<String, dynamic>.from(item as Map);
+            final hash = map['sha256_hash']?.toString();
+            if (hash != null && seenHashes.contains(hash)) {
+              // Match existing remote record and add base64Data if remote doesn't have a working signed URL
+              final idx = enriched.indexWhere((e) => e['sha256_hash']?.toString() == hash);
+              if (idx != -1 && map['base64_data'] != null) {
+                enriched[idx]['base64_data'] = map['base64_data'];
               }
-              _signedUrlCache[storagePath] = (
-                url: signedUrl,
-                expiresAt: DateTime.now().add(const Duration(seconds: 3500)),
-              );
-              map['signed_url'] = signedUrl;
-            } catch (_) {}
+              continue;
+            }
+            if (hash != null) seenHashes.add(hash);
+            enriched.insert(0, map);
           }
         }
-        enriched.add(map);
       }
-      return enriched;
-    } catch (_) {
-      return [];
-    }
+    } catch (_) {}
+
+    return enriched;
   }
 
   /// Fetches registered users and their assigned roles for Admin Role Assignment workstation

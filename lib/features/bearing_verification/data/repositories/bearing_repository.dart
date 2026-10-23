@@ -14,8 +14,8 @@ import '../../../rewards/data/services/reward_service.dart';
 abstract class BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload);
   Future<BearingModel?> getBearingById(String id);
-  Future<BearingModel> markBearingIn(String id, {String? proofImageHash, String? notes});
-  Future<BearingModel> markBearingOut(String id, {String? proofImageHash});
+  Future<BearingModel> markBearingIn(String id, {String? proofImageHash, String? notes, bool skipRemoteRpc = false});
+  Future<BearingModel> markBearingOut(String id, {String? proofImageHash, bool skipRemoteRpc = false});
   Future<List<VerificationEvent>> getEventsForBearing(String bearingId);
   Future<List<BearingModel>> getAllBearings({
     String? customerId,
@@ -38,6 +38,8 @@ class BearingRepositoryImpl implements BearingRepository {
 
   static void registerInMemoryBearing(BearingModel bearing) {
     _inMemoryStore[bearing.id] = bearing;
+    _inMemoryStore[bearing.id.toUpperCase()] = bearing;
+    _inMemoryStore[bearing.id.toLowerCase()] = bearing;
   }
 
   static void resetInMemoryStore() {
@@ -123,7 +125,8 @@ class BearingRepositoryImpl implements BearingRepository {
               qr_batches (batch_code, plant_location),
               warranty_plans:assigned_warranty_plan_id (title, duration_months)
             ''')
-            .eq('bearing_id', bearingId)
+            .or('bearing_id.eq.$bearingId,bearing_id.ilike.$bearingId,payload_value.eq.$bearingId,payload_value.ilike.$bearingId')
+            .limit(1)
             .maybeSingle();
 
         if (row != null) {
@@ -237,10 +240,33 @@ class BearingRepositoryImpl implements BearingRepository {
       );
     }
 
-    var bearing = _inMemoryStore[bearingId];
+    var bearing = _inMemoryStore[bearingId] ??
+        _inMemoryStore[bearingId.toUpperCase()] ??
+        _inMemoryStore[bearingId.toLowerCase()] ??
+        _inMemoryStore[rawPayload] ??
+        _inMemoryStore[rawPayload.toUpperCase()] ??
+        _inMemoryStore[rawPayload.toLowerCase()];
+
     if (bearing == null) {
-      // Auto-recognize genuine cryptographic keys and valid serials
-      if (BearingEncryptionKeyService.verifyTamperProofChecksum(bearingId)) {
+      final qrRec = QrManagementRepository.findQrRecord(bearingId) ??
+          QrManagementRepository.findQrRecord(rawPayload);
+      if (qrRec != null) {
+        final bId = qrRec['bearing_id']?.toString() ?? bearingId;
+        final model = qrRec['model_number']?.toString() ?? 'PBI-6204-ZZ';
+        final dur = (qrRec['duration_months'] as num?)?.toInt() ?? 6;
+        final batch = qrRec['batch_code']?.toString() ?? 'BATCH-ACTIVE';
+        final plant = qrRec['plant_location']?.toString() ?? 'Plant 02 — Chakan';
+        final registered = BearingModel(
+          id: bId,
+          batchCode: batch,
+          modelNumber: model,
+          plantLocation: plant,
+          warrantyDurationMonths: dur,
+          state: BearingLifecycleState.notActivated,
+        );
+        registerInMemoryBearing(registered);
+        bearing = registered;
+      } else if (BearingEncryptionKeyService.verifyTamperProofChecksum(bearingId)) {
         final decoded = BearingEncryptionKeyService.decodeKey(bearingId);
         final modelTok = decoded['model_token'] ?? '6204';
         final modelNum = 'PBI-$modelTok-ZZ';
@@ -254,7 +280,8 @@ class BearingRepositoryImpl implements BearingRepository {
         );
         registerInMemoryBearing(autoBearing);
         bearing = autoBearing;
-      } else if (BearingEncryptionKeyService.isValidKeyOrId(bearingId)) {
+      } else if (BearingEncryptionKeyService.isValidKeyOrId(bearingId) ||
+          BearingEncryptionKeyService.isValidKeyOrId(rawPayload)) {
         final autoBearing = BearingModel(
           id: bearingId,
           batchCode: 'BATCH-2026-OCT-A',
@@ -355,7 +382,8 @@ class BearingRepositoryImpl implements BearingRepository {
               qr_batches (batch_code, plant_location),
               warranty_plans:assigned_warranty_plan_id (title, duration_months)
             ''')
-            .eq('bearing_id', cleanId)
+            .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,bearing_id.eq.${id.trim()},bearing_id.ilike.${id.trim()},payload_value.eq.$cleanId,payload_value.ilike.$cleanId')
+            .limit(1)
             .maybeSingle();
 
         if (response != null) {
@@ -387,7 +415,7 @@ class BearingRepositoryImpl implements BearingRepository {
             if (diff > 0) dur = diff;
           }
 
-          return BearingModel(
+          final resBearing = BearingModel(
             id: response['bearing_id'],
             batchCode: batch?['batch_code'] ?? 'BATCH-2026-OCT-A',
             modelNumber: response['model_number'] ?? 'PBI-6204-ZZ',
@@ -398,17 +426,61 @@ class BearingRepositoryImpl implements BearingRepository {
             lastInDate: firstIn,
             explicitExpiryDate: expiry,
           );
+          registerInMemoryBearing(resBearing);
+          return resBearing;
         }
       } catch (_) {
         // Fall back to in-memory store
       }
     }
 
-    if (!_inMemoryStore.containsKey(cleanId)) {
-      await QrManagementRepository.loadFromLocalStorage();
+    final cached = _inMemoryStore[cleanId] ??
+        _inMemoryStore[id.trim()] ??
+        _inMemoryStore[id.trim().toLowerCase()];
+
+    if (cached != null) {
+      if (isLocallyOut && cached.state != BearingLifecycleState.currentlyOut) {
+        return BearingModel(
+          id: cached.id,
+          batchCode: cached.batchCode,
+          modelNumber: cached.modelNumber,
+          plantLocation: cached.plantLocation,
+          warrantyDurationMonths: cached.warrantyDurationMonths,
+          state: BearingLifecycleState.currentlyOut,
+          firstInDate: cached.firstInDate,
+          lastInDate: cached.lastInDate,
+          lastOutDate: cached.lastOutDate ?? DateTime.now(),
+          assignedCustomerId: cached.assignedCustomerId,
+          assignedCustomerEmail: cached.assignedCustomerEmail,
+          customerName: cached.customerName,
+          explicitExpiryDate: cached.warrantyExpiryDate,
+        );
+      }
+      return cached;
     }
 
-    if (!_inMemoryStore.containsKey(cleanId) && BearingEncryptionKeyService.isValidKeyOrId(cleanId)) {
+    await QrManagementRepository.loadFromLocalStorage();
+    final qrRec = QrManagementRepository.findQrRecord(cleanId) ??
+        QrManagementRepository.findQrRecord(id.trim());
+    if (qrRec != null) {
+      final model = qrRec['model_number']?.toString() ?? 'PBI-6204-ZZ';
+      final dur = (qrRec['duration_months'] as num?)?.toInt() ?? 6;
+      final batch = qrRec['batch_code']?.toString() ?? 'BATCH-ACTIVE';
+      final plant = qrRec['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex';
+      final resolvedBearing = BearingModel(
+        id: qrRec['bearing_id']?.toString() ?? cleanId,
+        batchCode: batch,
+        modelNumber: model,
+        plantLocation: plant,
+        warrantyDurationMonths: dur,
+        state: isLocallyOut ? BearingLifecycleState.currentlyOut : BearingLifecycleState.notActivated,
+      );
+      registerInMemoryBearing(resolvedBearing);
+      return resolvedBearing;
+    }
+
+    if (BearingEncryptionKeyService.isValidKeyOrId(cleanId) ||
+        BearingEncryptionKeyService.isValidKeyOrId(id.trim())) {
       final autoBearing = BearingModel(
         id: cleanId,
         batchCode: 'BATCH-2026-OCT-A',
@@ -420,22 +492,22 @@ class BearingRepositoryImpl implements BearingRepository {
       registerInMemoryBearing(autoBearing);
     }
 
-    final cached = _inMemoryStore[cleanId];
-    if (cached != null && isLocallyOut && cached.state != BearingLifecycleState.currentlyOut) {
+    final lateCached = _inMemoryStore[cleanId];
+    if (lateCached != null && isLocallyOut && lateCached.state != BearingLifecycleState.currentlyOut) {
       final outCached = BearingModel(
-        id: cached.id,
-        batchCode: cached.batchCode,
-        warrantyDurationMonths: cached.warrantyDurationMonths,
+        id: lateCached.id,
+        batchCode: lateCached.batchCode,
+        warrantyDurationMonths: lateCached.warrantyDurationMonths,
         state: BearingLifecycleState.currentlyOut,
-        firstInDate: cached.firstInDate,
-        lastInDate: cached.lastInDate,
-        lastOutDate: cached.lastOutDate ?? DateTime.now(),
-        customerName: cached.customerName,
-        assignedCustomerId: cached.assignedCustomerId,
-        assignedCustomerEmail: cached.assignedCustomerEmail,
-        plantLocation: cached.plantLocation,
-        modelNumber: cached.modelNumber,
-        explicitExpiryDate: cached.warrantyExpiryDate,
+        firstInDate: lateCached.firstInDate,
+        lastInDate: lateCached.lastInDate,
+        lastOutDate: lateCached.lastOutDate ?? DateTime.now(),
+        customerName: lateCached.customerName,
+        assignedCustomerId: lateCached.assignedCustomerId,
+        assignedCustomerEmail: lateCached.assignedCustomerEmail,
+        plantLocation: lateCached.plantLocation,
+        modelNumber: lateCached.modelNumber,
+        explicitExpiryDate: lateCached.warrantyExpiryDate,
       );
       _inMemoryStore[cleanId] = outCached;
       return outCached;
@@ -445,7 +517,12 @@ class BearingRepositoryImpl implements BearingRepository {
   }
 
   @override
-  Future<BearingModel> markBearingIn(String id, {String? proofImageHash, String? notes}) async {
+  Future<BearingModel> markBearingIn(
+    String id, {
+    String? proofImageHash,
+    String? notes,
+    bool skipRemoteRpc = false,
+  }) async {
     final cleanId = id.trim().toUpperCase();
     final prefs = await SharedPreferences.getInstance();
     final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$cleanId') == true ||
@@ -456,7 +533,7 @@ class BearingRepositoryImpl implements BearingRepository {
       throw StateError('Bearing $cleanId has already been marked OUT and is permanently decommissioned. Re-installation is strictly prohibited.');
     }
 
-    if (SupabaseService.isInitialized) {
+    if (!skipRemoteRpc && SupabaseService.isInitialized) {
       try {
         await SupabaseService.confirmBearingIn(
           bearingId: cleanId,
@@ -530,7 +607,11 @@ class BearingRepositoryImpl implements BearingRepository {
   }
 
   @override
-  Future<BearingModel> markBearingOut(String id, {String? proofImageHash}) async {
+  Future<BearingModel> markBearingOut(
+    String id, {
+    String? proofImageHash,
+    bool skipRemoteRpc = false,
+  }) async {
     final cleanId = id.trim().toUpperCase();
     final existing = await getBearingById(cleanId);
     if (existing == null) {
@@ -545,7 +626,7 @@ class BearingRepositoryImpl implements BearingRepository {
     await prefs.setString('pbi_track_state_$cleanId', 'FINAL_OUT');
     await prefs.setString('pbi_bearing_state_$cleanId', 'CURRENTLY_OUT');
 
-    if (SupabaseService.isInitialized) {
+    if (!skipRemoteRpc && SupabaseService.isInitialized) {
       try {
         await SupabaseService.confirmBearingOut(
           bearingId: cleanId,

@@ -15,6 +15,7 @@ import '../../../../core/widgets/whatsapp_icon.dart';
 import '../../data/models/bearing_model.dart';
 import '../../data/repositories/bearing_repository.dart';
 import '../widgets/bearing_out_email_dialog.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
 
 class OutResultScreen extends StatefulWidget {
   final String bearingId;
@@ -249,18 +250,26 @@ class _OutResultScreenState extends State<OutResultScreen> {
         ? '\n• *Notes:* ${storedNotes.trim()}'
         : '';
 
+    final pName = ItemMasterRepository().findByCode(_bearing?.modelNumber ?? '')?.itemName ??
+        'Pivot Industrial Precision Bearing';
+    final warrantyCoverage = '${_bearing?.warrantyDurationMonths ?? 12} Months Industrial Warranty';
+
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-• *Bearing ID:* ${widget.bearingId}
-• *Model Number:* ${_bearing?.modelNumber ?? 'PBI-Standard'}
-• *Bearing In:* $inDateStr
-• *Bearing Out:* $outDateStr
-• *Total Duration:* $cycleSummary
-• *Warranty:* $warrantyStatusStr
-• *Status:* Decommissioned / Final Out$notesLine
+• *Bearing QR Serial:* ${widget.bearingId}
+• *Model / Part No:* ${_bearing?.modelNumber ?? 'PBI-Standard'}
+• *Assigned Product:* $pName
+• *Warranty Coverage:* $warrantyCoverage
+• *Batch Code:* ${_bearing?.batchCode ?? 'BATCH-ACTIVE'}
+• *Plant Location:* ${_bearing?.plantLocation ?? 'Plant 02 — Chakan Industrial Complex'}
+• *Bearing In (Installed):* $inDateStr
+• *Bearing Out (Removed):* $outDateStr
+• *Total Operating Duration:* $cycleSummary
+• *Warranty Status:* $warrantyStatusStr
+• *Operating Status:* Decommissioned / Final Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-Official Warranty Telemetry Record
+Official Authorized Bearing Traceability & Authenticity Ledger
 '''.trim();
 
     final auth = AuthController.instance;

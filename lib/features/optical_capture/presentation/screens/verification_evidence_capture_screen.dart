@@ -74,7 +74,7 @@ class _VerificationEvidenceCaptureScreenState
 
       _cameraController = CameraController(
         backCamera,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
       );
 
@@ -171,20 +171,20 @@ class _VerificationEvidenceCaptureScreenState
       final eventId = 'evt-${DateTime.now().millisecondsSinceEpoch}';
 
       // 1. Process and Upload to Supabase Storage / local cryptographic ledger
-      // High compression (960px, Q55 WebP) preserves inspection fidelity while saving >85% egress.
+      // Rapid high-speed capture (800px max, Q70 JPEG) finishes in milliseconds without freezing UI.
       final uploadRecord = await VerificationImageService.processAndUpload(
         rawBytes: rawBytes,
         qrCodeId: widget.bearingId,
         eventId: eventId,
         imageType: widget.imageType,
-        maxDimension: 960,
-        quality: 55,
+        maxDimension: 800,
+        quality: 70,
       );
 
       final proofHash = uploadRecord?.sha256Hash ?? 'SHA-PROOF-${DateTime.now().millisecondsSinceEpoch}';
       final imageId = uploadRecord?.id;
 
-      // 2. Execute state transition on both backend and local registry
+      // 2. Execute authoritative state transition with optical proof link
       if (widget.imageType == 'IN_INSTALLATION') {
         final notePayload = widget.notes?.trim().isNotEmpty == true
             ? widget.notes!.trim()
@@ -205,10 +205,12 @@ class _VerificationEvidenceCaptureScreenState
           }
         } catch (_) {}
 
+        // Instant local store sync (skipping redundant 2nd remote call)
         await BearingRepositoryImpl().markBearingIn(
           widget.bearingId,
           proofImageHash: proofHash,
           notes: notePayload,
+          skipRemoteRpc: true,
         );
 
         if (!mounted) return;
@@ -228,9 +230,11 @@ class _VerificationEvidenceCaptureScreenState
           }
         } catch (_) {}
 
+        // Instant local store sync (skipping redundant 2nd remote call)
         await BearingRepositoryImpl().markBearingOut(
           widget.bearingId,
           proofImageHash: proofHash,
+          skipRemoteRpc: true,
         );
 
         if (!mounted) return;
