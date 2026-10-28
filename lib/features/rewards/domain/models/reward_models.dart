@@ -100,6 +100,8 @@ class RewardClaimResult {
   final String rateDisplay;
   final int newBalance;
   final String message;
+  final String? supplierName;
+  final String? supplierContact;
 
   const RewardClaimResult({
     required this.rewardAwarded,
@@ -111,6 +113,8 @@ class RewardClaimResult {
     this.rateDisplay = '',
     this.newBalance = 0,
     required this.message,
+    this.supplierName,
+    this.supplierContact,
   });
 
   factory RewardClaimResult.empty({String message = 'No reward applicable.'}) {
@@ -127,11 +131,13 @@ class RewardClaimResult {
       alreadyClaimed: json['already_claimed'] == true,
       isUserBlocked: json['is_user_blocked'] == true,
       bearingId: json['bearing_id']?.toString(),
-      pointsEarned: (json['points_earned'] as num?)?.toInt() ?? 0,
-      amountInr: (json['amount_inr'] as num?)?.toDouble() ?? 0.0,
+      pointsEarned: (json['points_awarded'] ?? json['points_earned'] as num?)?.toInt() ?? 0,
+      amountInr: (json['inr_value'] ?? json['amount_inr'] as num?)?.toDouble() ?? 0.0,
       rateDisplay: json['rate_display']?.toString() ?? '',
       newBalance: (json['new_balance'] as num?)?.toInt() ?? 0,
       message: json['message']?.toString() ?? '',
+      supplierName: json['supplier_name']?.toString(),
+      supplierContact: json['supplier_contact']?.toString(),
     );
   }
 }

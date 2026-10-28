@@ -62,20 +62,10 @@ class IndustrialAppBar extends StatelessWidget implements PreferredSizeWidget {
             )
           else
             // Industrial Bearing Application Icon
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.primary, width: 1.5),
-                borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Image.asset(
-                'assets/webappicon.png',
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
-              ),
+            Image.asset(
+              'assets/company_logo.webp',
+              height: 28,
+              fit: BoxFit.contain,
             ),
           const SizedBox(width: AppDimensions.spaceSm),
           Expanded(

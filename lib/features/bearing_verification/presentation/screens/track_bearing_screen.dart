@@ -16,6 +16,7 @@ import '../../../../core/widgets/whatsapp_icon.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../data/services/bearing_track_service.dart';
 import '../../domain/models/bearing_track_result.dart';
+import '../../domain/models/bearing_history_item.dart';
 import '../../../rewards/domain/models/reward_models.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
 
@@ -36,10 +37,12 @@ enum TrackViewStep {
 /// - Fully mobile responsive for compact and smaller Android displays
 class TrackBearingScreen extends StatefulWidget {
   final String? initialPayload;
+  final int? initialTabIndex;
 
   const TrackBearingScreen({
     super.key,
     this.initialPayload,
+    this.initialTabIndex,
   });
 
   @override
@@ -61,6 +64,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   String? _lastScannedCode;
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  int _selectedLandingTab = 0; // 0: Track, 1: Product In, 2: Product Out
 
   static const Color _greenPrimary = Color(0xFF0D8A4E);
   static const Color _greenBackground = Color(0xFFE8F5E9);
@@ -79,6 +83,10 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkInitialFraudLock();
+
+    if (widget.initialTabIndex != null && widget.initialTabIndex! >= 0 && widget.initialTabIndex! <= 2) {
+      _selectedLandingTab = widget.initialTabIndex!;
+    }
 
     _laserAnimController = AnimationController(
       vsync: this,
@@ -585,9 +593,399 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   // ===========================================================================
-  // 1. LANDING VIEW: Instant 1-Tap QR-Only Tracking
+  // 1. LANDING VIEW: Instant 1-Tap QR-Only Tracking with In/Out History Tabs
   // ===========================================================================
   Widget _buildLandingView(BoxConstraints constraints) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDimensions.gutterMobile,
+            AppDimensions.gutterMobile,
+            AppDimensions.gutterMobile,
+            0,
+          ),
+          child: _buildLandingTabBar(),
+        ),
+        Expanded(
+          child: _selectedLandingTab == 0
+              ? _buildTrackingLandingContent(constraints)
+              : _selectedLandingTab == 1
+                  ? _buildProductInTabContent()
+                  : _buildProductOutTabContent(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLandingTabBar() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _buildTabItem(index: 0, title: 'Track', icon: Icons.qr_code_scanner_rounded),
+          _buildTabItem(index: 1, title: 'Product In', icon: Icons.login_rounded),
+          _buildTabItem(index: 2, title: 'Product Out', icon: Icons.logout_rounded),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabItem({
+    required int index,
+    required String title,
+    required IconData icon,
+  }) {
+    final isSelected = _selectedLandingTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedLandingTab = index;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(50),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : Colors.grey[600],
+              ),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.grey[700],
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductInTabContent() {
+    return FutureBuilder<List<BearingHistoryItem>>(
+      future: BearingTrackService.fetchTrackInHistory(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.inventory_2_outlined, size: 54, color: Colors.grey[400]),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No Bearings Currently In Machine',
+                    style: AppTypography.headlineSm.copyWith(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Scan or enter a bearing QR code to mark it as Bearing In.',
+                    style: AppTypography.caption.copyWith(color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {});
+          },
+          child: ListView.separated(
+            padding: const EdgeInsets.all(AppDimensions.gutterMobile),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return _buildProductInCard(item);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildProductInCard(BearingHistoryItem item) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+        border: Border.all(color: Colors.black12, width: 1.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.qr_code_2_rounded, size: 20, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        item.bearingId,
+                        style: AppTypography.labelMd.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.primary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _greenBackground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: _greenBorder.withOpacity(0.4)),
+                ),
+                child: Text(
+                  'Active In Machine',
+                  style: AppTypography.caption.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: _greenTextDark,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.black12, height: 20),
+          _buildSpecRow('Model / Part Number', item.modelNumber),
+          _buildSpecRow('Batch Code', item.batchCode),
+          _buildSpecRow(
+            'Bearing In Date & Time',
+            _dateFormat.format(item.inTimestamp),
+            isSuccess: true,
+          ),
+          if (item.notes != null && item.notes!.trim().isNotEmpty)
+            _buildSpecRow('Notes', item.notes!.trim()),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(50),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                elevation: 0,
+              ),
+              onPressed: () => _shareCustomWhatsAppMessage(item.toWhatsAppText()),
+              icon: const WhatsAppIcon(size: 18, color: Colors.white),
+              label: const Text(
+                'Send via WhatsApp',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductOutTabContent() {
+    return FutureBuilder<List<BearingHistoryItem>>(
+      future: BearingTrackService.fetchTrackOutHistory(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.history_rounded, size: 54, color: Colors.grey[400]),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No Tracked Out Bearings',
+                    style: AppTypography.headlineSm.copyWith(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Bearings that have been marked out will appear here with full duration history.',
+                    style: AppTypography.caption.copyWith(color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {});
+          },
+          child: ListView.separated(
+            padding: const EdgeInsets.all(AppDimensions.gutterMobile),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return _buildProductOutCard(item);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildProductOutCard(BearingHistoryItem item) {
+    final inTimeFormatted = _dateFormat.format(item.inTimestamp);
+    final outTimeFormatted = item.outTimestamp != null
+        ? _dateFormat.format(item.outTimestamp!)
+        : 'Completed';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+        border: Border.all(color: Colors.black12, width: 1.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.qr_code_2_rounded, size: 20, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        item.bearingId,
+                        style: AppTypography.labelMd.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.primary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _redBackground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: _redBorder.withOpacity(0.4)),
+                ),
+                child: Text(
+                  'Tracked Out',
+                  style: AppTypography.caption.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: _redTextDark,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.black12, height: 20),
+          _buildSpecRow('Model / Part Number', item.modelNumber),
+          _buildSpecRow('Batch Code', item.batchCode),
+          _buildSpecRow('Bearing In Date & Time', inTimeFormatted),
+          _buildSpecRow('Bearing Out Date & Time', outTimeFormatted, isDanger: true),
+          _buildSpecRow('Total Usage Duration', item.formattedDuration, isHighlighted: true),
+          if (item.notes != null && item.notes!.trim().isNotEmpty)
+            _buildSpecRow('Notes', item.notes!.trim()),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(50),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                elevation: 0,
+              ),
+              onPressed: () => _shareCustomWhatsAppMessage(item.toWhatsAppText()),
+              icon: const WhatsAppIcon(size: 18, color: Colors.white),
+              label: const Text(
+                'Send via WhatsApp',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrackingLandingContent(BoxConstraints constraints) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppDimensions.gutterMobile),
       child: Column(
@@ -1451,11 +1849,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
                 _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
-                if (result.productName != null && result.productName!.isNotEmpty)
-                  _buildSpecRow('Assigned Product', result.productName!),
-                _buildSpecRow('Warranty Coverage', '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty'),
                 _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
-                _buildSpecRow('Plant Location', result.plantLocation ?? 'Plant 02 — Chakan'),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted, isSuccess: true),
                 Builder(
                   builder: (_) {
@@ -1545,6 +1939,30 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           ),
 
           const SizedBox(height: AppDimensions.spaceMd),
+
+          // Send via WhatsApp Button
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(50),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              elevation: 2,
+            ),
+            onPressed: () => _shareViaWhatsApp(result),
+            icon: const WhatsAppIcon(size: 22, color: Colors.white),
+            label: Text(
+              'Send via WhatsApp',
+              style: AppTypography.labelMd.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppDimensions.spaceSm),
 
           // Actions
           if (result.bearingId != null && result.bearingId!.isNotEmpty) ...[
@@ -1727,11 +2145,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
                 _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
-                if (result.productName != null && result.productName!.isNotEmpty)
-                  _buildSpecRow('Assigned Product', result.productName!),
-                _buildSpecRow('Warranty Coverage', '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty'),
                 _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
-                _buildSpecRow('Plant Location', result.plantLocation ?? 'Plant 02 — Chakan'),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted),
                 _buildSpecRow('Bearing Out Date & Time', outTimeFormatted, isDanger: true),
                 _buildSpecRow(
@@ -2095,11 +2509,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
                 _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
-                if (result.productName != null && result.productName!.isNotEmpty)
-                  _buildSpecRow('Assigned Product', result.productName!),
-                _buildSpecRow('Warranty Coverage', '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty'),
                 _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
-                _buildSpecRow('Plant Location', result.plantLocation ?? 'Plant 02 — Chakan'),
                 if (result.inTimestamp != null)
                   _buildSpecRow('Bearing In', inTimeStr),
                 if (result.outTimestamp != null)
@@ -2402,30 +2812,43 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
             '');
     final notesLine = (storedNotes.isNotEmpty) ? '\n• *Notes:* $storedNotes' : '';
 
-    final productName = (result.productName != null && result.productName!.isNotEmpty)
-        ? result.productName!
-        : (ItemMasterRepository().findByCode(result.modelNumber ?? '')?.itemName ??
-            'Pivot Industrial Precision Bearing');
-    final warrantyCoverage = '${result.warrantyDurationMonths ?? 12} Months Industrial Warranty';
-
-    final message = '''
-*PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
+    final isBearingIn = result.action.toUpperCase() == 'BEARING_IN';
+    final String message;
+    if (isBearingIn) {
+      message = '''
+*PIVOT BEARINGS INDIA - BEARING IN NOTIFICATION*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-• *Bearing QR Serial:* ${result.bearingId ?? 'N/A'}
+• *Bearing QR / Serial:* ${result.bearingId ?? 'N/A'}
 • *Model / Part No:* ${result.modelNumber ?? 'PBI-Standard'}
-• *Assigned Product:* $productName
-• *Warranty Coverage:* $warrantyCoverage
 • *Batch Code:* ${result.batchCode ?? 'BATCH-ACTIVE'}
-• *Plant Location:* ${result.plantLocation ?? 'Plant 02 — Chakan Industrial Complex'}
+• *Bearing In (Installed):* $inTimeFormatted
+• *Operating Status:* Active (Cycle #${result.cycleNumber})$notesLine
+━━━━━━━━━━━━━━━━━━━━━━━━━
+Official Authorized Bearing Traceability Ledger
+'''.trim();
+    } else {
+      message = '''
+*PIVOT BEARINGS INDIA - BEARING OUT SUMMARY*
+━━━━━━━━━━━━━━━━━━━━━━━━━
+• *Bearing QR / Serial:* ${result.bearingId ?? 'N/A'}
+• *Model / Part No:* ${result.modelNumber ?? 'PBI-Standard'}
+• *Batch Code:* ${result.batchCode ?? 'BATCH-ACTIVE'}
 • *Bearing In (Installed):* $inTimeFormatted
 • *Bearing Out (Removed):* $outTimeFormatted
 • *Total Operating Duration:* $durationClean
 • *Completed Cycle:* Cycle #${result.cycleNumber} Closed
 • *Operating Status:* Decommissioned / Final Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-Official Authorized Bearing Traceability & Authenticity Ledger
+Official Authorized Bearing Traceability Ledger
 '''.trim();
+    }
 
+    await _shareCustomWhatsAppMessage(message);
+  }
+
+  Future<void> _shareCustomWhatsAppMessage(String message) async {
+    final auth = AuthController.instance;
+    final prefs = await SharedPreferences.getInstance();
     String? authNumber;
     if (auth.authorisedNumbers.isNotEmpty) {
       authNumber = auth.authorisedNumbers.first;

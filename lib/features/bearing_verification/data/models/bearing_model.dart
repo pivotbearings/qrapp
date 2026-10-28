@@ -67,6 +67,26 @@ class BearingModel {
     return DateTime.now().isBefore(expiry);
   }
 
+  /// Whether warranty is nearing expiration: within the final 20% of its duration
+  /// (e.g. on day 80 of a 100-day warranty).
+  bool get isExpiringSoon {
+    if (isWarrantyExpired) return false;
+    if (state == BearingLifecycleState.currentlyOut) return false;
+    final expiry = warrantyExpiryDate;
+    if (expiry == null) return false;
+
+    final start = firstInDate;
+    final totalDays = start != null
+        ? expiry.difference(start).inDays
+        : (warrantyDurationMonths > 0 ? warrantyDurationMonths * 30 : 0);
+    if (totalDays <= 0) return false;
+
+    final daysLeft = daysLeftToExpiry;
+    if (daysLeft == null || daysLeft < 0) return false;
+
+    return daysLeft <= (totalDays * 0.20);
+  }
+
   int? get daysLeftToExpiry {
     final expiry = warrantyExpiryDate;
     if (expiry == null) return null;

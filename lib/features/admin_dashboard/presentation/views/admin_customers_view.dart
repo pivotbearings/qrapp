@@ -177,17 +177,21 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
     final userId = user['id']?.toString() ?? '';
     final userEmail = user['email']?.toString() ?? '';
 
+    // Strictly mutually exclusive: only one module may be active at any time
+    final safeWarranty = hasWarranty && !hasTrackBearing;
+    final safeTrack = hasTrackBearing;
+
     setState(() {
       _savingUserIds.add(userId);
-      user['has_warranty_access'] = hasWarranty;
-      user['has_track_bearing_access'] = hasTrackBearing;
+      user['has_warranty_access'] = safeWarranty;
+      user['has_track_bearing_access'] = safeTrack;
     });
 
     try {
       final ok = await SupabaseService.updateUserModulePermissions(
         userId: userId,
-        hasWarranty: hasWarranty,
-        hasTrackBearing: hasTrackBearing,
+        hasWarranty: safeWarranty,
+        hasTrackBearing: safeTrack,
         email: userEmail,
       );
 
@@ -635,9 +639,11 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
     final isApproved = user['is_approved'] == true;
     final isAdmin = role == 'ADMIN';
 
-    // Module Permissions & Reward Eligibility
-    final hasWarranty = isAdmin || user['has_warranty_access'] == true;
-    final hasTrack = isAdmin || user['has_track_bearing_access'] == true;
+    // Module Permissions & Reward Eligibility (Strictly mutually exclusive)
+    final rawWarranty = user['has_warranty_access'] == true;
+    final rawTrack = user['has_track_bearing_access'] == true;
+    final hasWarranty = rawWarranty && !rawTrack;
+    final hasTrack = rawTrack;
     final isRewardEligible = user['is_reward_eligible'] != false;
 
     final isExpanded = _expandedEmails.contains(email);
@@ -875,14 +881,15 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                   // Toggle 1: Warranty Module
                   _buildModuleToggleTile(
                     title: '1. Warranty Module',
+                    subtitle: 'Grants access to Warranty Check and lifecycle tracking. Disables Track Your Bearing module.',
                     icon: Icons.shield_outlined,
                     value: hasWarranty,
-                    isDisabled: isAdmin, // Admins always have access
+                    isDisabled: false,
                     onChanged: (newVal) {
                       _updateModulePermission(
                         user: user,
                         hasWarranty: newVal,
-                        hasTrackBearing: hasTrack,
+                        hasTrackBearing: newVal ? false : hasTrack,
                       );
                     },
                   ),
@@ -892,16 +899,41 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                   // Toggle 2: Track Your Bearing Module
                   _buildModuleToggleTile(
                     title: '2. Track Your Bearing Module',
+                    subtitle: 'Grants access to streamlined QR Track In/Out. Disables Warranty module.',
                     icon: Icons.sync_alt_rounded,
                     value: hasTrack,
-                    isDisabled: isAdmin, // Admins always have access
+                    isDisabled: false,
                     onChanged: (newVal) {
                       _updateModulePermission(
                         user: user,
-                        hasWarranty: hasWarranty,
+                        hasWarranty: newVal ? false : hasWarranty,
                         hasTrackBearing: newVal,
                       );
                     },
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Mutual Exclusivity Helper Note
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.black12, width: 1.0),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, size: 14, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Modules are mutually exclusive. Only one module can be active at a time.',
+                            style: AppTypography.caption.copyWith(fontSize: 10.5, color: Colors.black87),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 8),

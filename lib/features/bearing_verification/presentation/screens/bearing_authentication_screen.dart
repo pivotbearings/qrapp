@@ -12,6 +12,7 @@ import '../../../../core/services/anti_fraud_service.dart';
 import '../../data/services/bearing_authentication_service.dart';
 import '../../domain/models/bearing_authentication_result.dart';
 import '../../../rewards/domain/models/reward_models.dart';
+import '../../../rewards/presentation/dialogs/claim_reward_points_dialog.dart';
 
 enum AuthenticationViewStep {
   landing,
@@ -221,6 +222,15 @@ class _BearingAuthenticationScreenState
           _authResult = result;
           _currentStep = AuthenticationViewStep.result;
         });
+
+        if (result.isAuthentic &&
+            !result.isAlreadyOut &&
+            result.rewardClaim?.alreadyClaimed != true &&
+            result.rewardClaim?.isUserBlocked != true) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _promptClaimRewardPoints(result.bearingId ?? payload);
+          });
+        }
       }
     } catch (e) {
       final fraudCheck = await AntiFraudService.recordInvalidScan(
@@ -1179,6 +1189,9 @@ class _BearingAuthenticationScreenState
           ] else if (result.rewardClaim?.alreadyClaimed == true) ...[
             const SizedBox(height: AppDimensions.spaceSm),
             _buildRewardAlreadyClaimedNotice(),
+          ] else if (result.isAuthentic && !result.isAlreadyOut) ...[
+            const SizedBox(height: AppDimensions.spaceSm),
+            _buildClaimRewardPointsPrompt(result),
           ],
 
           const SizedBox(height: AppDimensions.spaceMd),
@@ -1396,6 +1409,80 @@ class _BearingAuthenticationScreenState
     );
   }
 
+  Future<void> _promptClaimRewardPoints(String bearingId) async {
+    if (!mounted) return;
+    final claim = await ClaimRewardPointsDialog.show(
+      context,
+      bearingId: bearingId,
+      sourceModule: 'AUTHENTICATE_BEARING',
+    );
+    if (claim != null && mounted) {
+      setState(() {
+        _authResult = _authResult?.copyWithReward(claim);
+      });
+    }
+  }
+
+  Widget _buildClaimRewardPointsPrompt(BearingAuthenticationResult result) {
+    final bearingId = result.bearingId ?? _lastScannedCode ?? '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+        border: Border.all(color: const Color(0xFF86EFAC), width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: const BoxDecoration(
+              color: Color(0xFF16A34A),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.stars_rounded, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Reward Points Eligible',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    color: Color(0xFF14532D),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Enter supplier details to claim your reward points.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            onPressed: () => _promptClaimRewardPoints(bearingId),
+            child: const Text(
+              'CLAIM',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRewardClaimCelebrationBanner(RewardClaimResult claim) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1440,6 +1527,17 @@ class _BearingAuthenticationScreenState
                     fontSize: 16,
                   ),
                 ),
+                if (claim.supplierName != null && claim.supplierName!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Supplier: ${claim.supplierName}',
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 2),
                 Text(
                   'Points added to your Pivot Reward Wallet.',

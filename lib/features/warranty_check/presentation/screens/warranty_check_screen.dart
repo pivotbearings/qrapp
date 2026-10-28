@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
@@ -7,6 +9,7 @@ import '../../../../core/constants/app_typography.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/widgets/industrial_app_bar.dart';
 import '../../../../core/widgets/industrial_status_badge.dart';
+import '../../../../core/widgets/whatsapp_icon.dart';
 import '../../../bearing_verification/data/models/bearing_model.dart';
 import '../../../bearing_verification/data/repositories/bearing_repository.dart';
 import '../../../bearing_verification/domain/models/qr_verification_result.dart';
@@ -16,10 +19,12 @@ import '../../../../core/services/anti_fraud_service.dart';
 
 class WarrantyCheckScreen extends StatefulWidget {
   final String? initialBearingId;
+  final int? initialTabIndex;
 
   const WarrantyCheckScreen({
     super.key,
     this.initialBearingId,
+    this.initialTabIndex,
   });
 
   @override
@@ -30,18 +35,83 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
   final BearingRepository _bearingRepo = BearingRepositoryImpl();
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _inputBearingCtrl = TextEditingController();
+  final DateFormat _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
   List<BearingModel> _allBearings = [];
   bool _isLoading = true;
   String? _errorMessage;
 
-  // 0: ALL, 1: UNDER WARRANTY, 2: EXPIRING SOON (<30d), 3: EXPIRED
+  // 0: ALL, 1: UNDER WARRANTY, 2: EXPIRING SOON (20% horizon), 3: EXPIRED
   int _activeFilterTab = 0;
   bool _isCheckingSpecific = false;
+
+  void _shareExpiredWarrantyOnWhatsApp(BearingModel item) {
+    final inStr = item.firstInDate != null ? _dateFormat.format(item.firstInDate!) : 'N/A';
+    final expStr = item.warrantyExpiryDate != null ? _dateFormat.format(item.warrantyExpiryDate!) : 'N/A';
+    final outStr = item.lastOutDate != null ? _dateFormat.format(item.lastOutDate!) : 'N/A';
+    final durStr = _calculateLifecycleDuration(item);
+
+    final msg = '''*PIVOT BEARINGS INDIA - EXPIRED WARRANTY RECORD*
+--------------------------------
+*Bearing ID:* ${item.id}
+*Model:* ${item.modelNumber}
+*Batch:* ${item.batchCode}
+*Category:* ${item.category}
+*Status:* WARRANTY EXPIRED
+*Warranty Start / In Date:* $inStr
+*Warranty Expiry Date:* $expStr
+*Track Out Date:* $outStr
+*Total Lifecycle Duration:* $durStr
+--------------------------------
+Official Industrial Warranty Record
+Pivot Bearings India''';
+
+    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}');
+    launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) {
+      if (mounted) AppSnackBar.showError(context, 'Could not launch WhatsApp.');
+    });
+  }
+
+  String _calculateLifecycleDuration(BearingModel item) {
+    if (item.firstInDate == null) return '${item.warrantyDurationMonths} Months';
+    final endDate = item.lastOutDate ?? item.warrantyExpiryDate ?? DateTime.now();
+    final diff = endDate.difference(item.firstInDate!);
+    final days = diff.inDays;
+    final hours = diff.inHours % 24;
+    if (days > 0) {
+      return '$days Days, $hours Hours';
+    } else {
+      return '${item.warrantyDurationMonths} Months';
+    }
+  }
+
+  Widget _buildLifecycleRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialTabIndex != null) {
+      _activeFilterTab = widget.initialTabIndex!;
+    }
     _loadUserBearings();
     if (widget.initialBearingId != null && widget.initialBearingId!.isNotEmpty) {
       _checkSpecificBearing(widget.initialBearingId!);
@@ -182,9 +252,8 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
         // Under Warranty
         if (!b.isUnderWarranty) return false;
       } else if (_activeFilterTab == 2) {
-        // Expiring soon (<30 days)
-        final days = b.daysLeftToExpiry;
-        if (days == null || days < 0 || days > 30) return false;
+        // Expiring soon (Within remaining 20% of warranty duration)
+        if (!b.isExpiringSoon) return false;
       } else if (_activeFilterTab == 3) {
         // Expired
         if (!b.isWarrantyExpired) return false;
@@ -212,10 +281,7 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
     final filtered = _filteredBearings;
     final totalCount = _allBearings.length;
     final underWarrantyCount = _allBearings.where((b) => b.isUnderWarranty).length;
-    final expiringSoonCount = _allBearings.where((b) {
-      final d = b.daysLeftToExpiry;
-      return d != null && d >= 0 && d <= 30;
-    }).length;
+    final expiringSoonCount = _allBearings.where((b) => b.isExpiringSoon).length;
     final expiredCount = _allBearings.where((b) => b.isWarrantyExpired).length;
 
     return Scaffold(
@@ -285,30 +351,51 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Action 1: Mark Bearing IN / OUT (With Proof Upload & Warranty Assignment)
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.background,
-                          elevation: 2,
-                          minimumSize: const Size.fromHeight(48),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(50),
+                      // Separate Track In and Track Out Action Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0D8A4E),
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                minimumSize: const Size.fromHeight(46),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(50),
+                                ),
+                              ),
+                              icon: const Icon(Icons.login_rounded, size: 18),
+                              label: const Text(
+                                'TRACK IN',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5),
+                              ),
+                              onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
+                            ),
                           ),
-                        ),
-                        icon: const Icon(Icons.camera_alt_outlined, size: 20),
-                        label: Text(
-                          'MARK BEARING IN / OUT (WITH PROOF)',
-                          style: AppTypography.labelMd.copyWith(
-                            color: AppColors.background,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                            fontSize: 12,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFDC2626),
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                minimumSize: const Size.fromHeight(46),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(50),
+                                ),
+                              ),
+                              icon: const Icon(Icons.logout_rounded, size: 18),
+                              label: const Text(
+                                'TRACK OUT',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5),
+                              ),
+                              onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
+                            ),
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
+                        ],
                       ),
                       const SizedBox(height: 10),
 
@@ -335,6 +422,26 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
                           textAlign: TextAlign.center,
                         ),
                         onPressed: _openQrScanner,
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Minimalistic Official Warranty Claims Disclaimer Note
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.0),
+                        ),
+                        child: const Text(
+                          'If your product is under warranty, all warranty claims, queries, and related matters must be handled directly with your supplier. Please do not contact the company directly regarding warranty issues. The company will not be responsible for handling such warranty claims.',
+                          style: TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 11.5,
+                            height: 1.45,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
 
@@ -788,6 +895,40 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (item.state == BearingLifecycleState.currentlyIn) ...[
+                        InkWell(
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppRoutes.outConfirmation,
+                              arguments: item.id,
+                            ).then((_) => _loadUserBearings());
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDC2626),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.logout_rounded, size: 12, color: Colors.white),
+                                SizedBox(width: 4),
+                                Text(
+                                  'TRACK OUT',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       Text(
                         'CHECK DETAILS',
                         style: AppTypography.labelMd.copyWith(
@@ -801,6 +942,55 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
                   ),
                 ],
               ),
+              if (isExpired) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFCA5A5).withValues(alpha: 0.6)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'COMPLETE LIFECYCLE HISTORY',
+                        style: AppTypography.caption.copyWith(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: 0.8,
+                          color: const Color(0xFF991B1B),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildLifecycleRow('Warranty Start (In Date)', item.firstInDate != null ? _dateFormat.format(item.firstInDate!) : 'N/A'),
+                      _buildLifecycleRow('Warranty Expiry Date', item.warrantyExpiryDate != null ? _dateFormat.format(item.warrantyExpiryDate!) : 'N/A'),
+                      _buildLifecycleRow('Track Out Date', item.lastOutDate != null ? _dateFormat.format(item.lastOutDate!) : 'Not tracked out'),
+                      _buildLifecycleRow('Total Lifecycle Duration', _calculateLifecycleDuration(item)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const WhatsAppIcon(size: 16),
+                    label: const Text(
+                      'SHARE EXPIRED RECORD ON WHATSAPP',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.4),
+                    ),
+                    onPressed: () => _shareExpiredWarrantyOnWhatsApp(item),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1042,12 +1232,37 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
                     ),
                     onPressed: () {
                       Navigator.pop(ctx);
-                      _markBearingOutAndOpenEmailDialog(bearing);
+                      Navigator.pushNamed(
+                        context,
+                        AppRoutes.outConfirmation,
+                        arguments: bearing.id,
+                      ).then((_) => _loadUserBearings());
                     },
                     icon: const Icon(Icons.logout_rounded, size: 18),
                     label: const Text(
-                      'MARK BEARING OUT & EMAIL LIFECYCLE',
+                      'TRACK OUT (WITH PROOF)',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFDC2626),
+                      side: const BorderSide(color: Color(0xFFDC2626), width: 1.2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _markBearingOutAndOpenEmailDialog(bearing);
+                    },
+                    icon: const Icon(Icons.email_outlined, size: 16),
+                    label: const Text(
+                      'MARK OUT & EMAIL LIFECYCLE',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                   ),
                 ),
@@ -1111,6 +1326,75 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
                 ],
               ),
               const SizedBox(height: 12),
+
+              // Minimalistic Warranty Claims Disclaimer
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.0),
+                ),
+                child: const Text(
+                  'If your product is under warranty, all warranty claims, queries, and related matters must be handled directly with your supplier. Please do not contact the company directly regarding warranty issues. The company will not be responsible for handling such warranty claims.',
+                  style: TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 11,
+                    height: 1.4,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (isExpired) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFCA5A5).withValues(alpha: 0.6)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'COMPLETE LIFECYCLE HISTORY',
+                        style: AppTypography.caption.copyWith(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: 0.8,
+                          color: const Color(0xFF991B1B),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildLifecycleRow('Warranty Start (In Date)', bearing.firstInDate != null ? _dateFormat.format(bearing.firstInDate!) : 'N/A'),
+                      _buildLifecycleRow('Warranty Expiry Date', bearing.warrantyExpiryDate != null ? _dateFormat.format(bearing.warrantyExpiryDate!) : 'N/A'),
+                      _buildLifecycleRow('Track Out Date', bearing.lastOutDate != null ? _dateFormat.format(bearing.lastOutDate!) : 'Not tracked out'),
+                      _buildLifecycleRow('Total Lifecycle Duration', _calculateLifecycleDuration(bearing)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const WhatsAppIcon(size: 16),
+                    label: const Text(
+                      'SHARE EXPIRED RECORD ON WHATSAPP',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.4),
+                    ),
+                    onPressed: () => _shareExpiredWarrantyOnWhatsApp(bearing),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

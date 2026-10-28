@@ -41,9 +41,6 @@ class AppRouter {
           if (auth.isAdmin) {
             return MaterialPageRoute(builder: (_) => const AdminDashboardScreen());
           }
-          if (!auth.isApproved) {
-            return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
-          }
           return MaterialPageRoute(builder: (_) => const CustomerHomeScreen());
         }
         return MaterialPageRoute(builder: (_) => const LoginScreen());
@@ -53,12 +50,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (auth.isApproved || auth.isAdmin) {
-          return MaterialPageRoute(
-            builder: (_) => auth.isAdmin ? const AdminDashboardScreen() : const CustomerHomeScreen(),
-          );
-        }
-        return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
+        return MaterialPageRoute(
+          builder: (_) => auth.isAdmin ? const AdminDashboardScreen() : const CustomerHomeScreen(),
+        );
 
       // Customer Profile & Account Details
       case AppRoutes.customerProfile:
@@ -75,17 +69,11 @@ class AppRouter {
         if (auth.isAdmin) {
           return MaterialPageRoute(builder: (_) => const AdminDashboardScreen());
         }
-        if (!auth.isApproved) {
-          return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
-        }
         return MaterialPageRoute(builder: (_) => const CustomerHomeScreen());
 
       case AppRoutes.customerHome:
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
-        }
-        if (!auth.isApproved && !auth.isAdmin) {
-          return MaterialPageRoute(builder: (_) => const PendingVerificationScreen());
         }
         return MaterialPageRoute(builder: (_) => const CustomerHomeScreen());
 
@@ -94,9 +82,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         return MaterialPageRoute(builder: (_) => const QrScannerScreen());
@@ -121,18 +109,31 @@ class AppRouter {
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
           );
         }
-        final initialPayload = (settings.arguments as String?);
+        String? initialPayload;
+        int? initialTab;
+        if (settings.arguments is int) {
+          initialTab = settings.arguments as int;
+        } else if (settings.arguments is String) {
+          initialPayload = settings.arguments as String;
+        } else if (settings.arguments is Map) {
+          final map = settings.arguments as Map;
+          initialPayload = map['initialPayload']?.toString() ?? map['bearingId']?.toString();
+          initialTab = (map['initialTabIndex'] ?? map['tabIndex']) as int?;
+        }
         return MaterialPageRoute(
-          builder: (_) => TrackBearingScreen(initialPayload: initialPayload),
+          builder: (_) => TrackBearingScreen(
+            initialPayload: initialPayload,
+            initialTabIndex: initialTab,
+          ),
         );
 
       case AppRoutes.bearingVerification:
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         final id = (settings.arguments as String?) ?? '';
@@ -142,9 +143,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         final id = (settings.arguments as String?) ?? '';
@@ -154,9 +155,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         String id = '';
@@ -180,9 +181,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         final id = (settings.arguments as String?) ?? '';
@@ -192,9 +193,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         final id = (settings.arguments as String?) ?? '';
@@ -204,9 +205,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         final id = (settings.arguments as String?) ?? '';
@@ -221,9 +222,9 @@ class AppRouter {
         if (!auth.isAuthenticated) {
           return MaterialPageRoute(builder: (_) => const LoginScreen());
         }
-        if (!auth.hasTrackBearingAccess) {
+        if (!auth.hasTrackBearingAccess && !auth.hasWarrantyAccess) {
           return MaterialPageRoute(
-            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track Your Bearing Module'),
+            builder: (_) => const AccessDeniedScreen(attemptedModule: 'Track / Warranty Module'),
           );
         }
         final id = (settings.arguments as String?) ?? '';
@@ -277,8 +278,23 @@ class AppRouter {
             builder: (_) => const AccessDeniedScreen(attemptedModule: 'Warranty Module'),
           );
         }
-        final initialId = (settings.arguments as String?);
-        return MaterialPageRoute(builder: (_) => WarrantyCheckScreen(initialBearingId: initialId));
+        String? initialId;
+        int? initialTab;
+        if (settings.arguments is int) {
+          initialTab = settings.arguments as int;
+        } else if (settings.arguments is String) {
+          initialId = settings.arguments as String;
+        } else if (settings.arguments is Map) {
+          final map = settings.arguments as Map;
+          initialId = map['bearingId']?.toString();
+          initialTab = map['tabIndex'] as int?;
+        }
+        return MaterialPageRoute(
+          builder: (_) => WarrantyCheckScreen(
+            initialBearingId: initialId,
+            initialTabIndex: initialTab,
+          ),
+        );
 
       case AppRoutes.rewardWallet:
         if (!auth.isAuthenticated) {

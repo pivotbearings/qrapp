@@ -7,6 +7,7 @@ import '../../../../core/constants/app_typography.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/google_password_saver.dart';
+import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/widgets/industrial_app_bar.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -50,8 +51,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     if (AuthController.instance.isAdmin) {
       Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
-    } else if (!AuthController.instance.isApproved) {
-      Navigator.pushReplacementNamed(context, AppRoutes.pendingVerification);
     } else {
       Navigator.pushReplacementNamed(context, AppRoutes.customerHome);
     }
@@ -183,16 +182,17 @@ class _LoginScreenState extends State<LoginScreen> {
       TextInput.finishAutofillContext(shouldSave: true);
       GooglePasswordSaver.save(username: email, password: password);
 
-      if (res.sessionActive) {
-        _routeAfterLogin();
-      } else {
-        setState(() {
-          _successMessage = res.message;
-          _tabIndex = 0; // Switch to Sign In tab
-          _loginEmailCtrl.text = email;
-          _loginPassCtrl.text = password;
-        });
-      }
+      setState(() {
+        _successMessage = 'Account created successfully! Please sign in with your email and password to access the Bearing Authentication module.';
+        _errorMessage = null;
+        _tabIndex = 0; // Switch to Sign In tab
+        _loginEmailCtrl.text = email;
+        _loginPassCtrl.text = password;
+      });
+      AppSnackBar.showSuccess(
+        context,
+        'Account created successfully! Please sign in with your email and password.',
+      );
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -304,27 +304,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   // Application Icon Image
                   Center(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.primary, width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.15),
-                            blurRadius: 16,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Image.asset(
-                        'assets/webappicon.png',
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                      ),
+                    child: Image.asset(
+                      'assets/company_logo.webp',
+                      height: 56,
+                      fit: BoxFit.contain,
                     ),
                   ),
                   const SizedBox(height: 14),

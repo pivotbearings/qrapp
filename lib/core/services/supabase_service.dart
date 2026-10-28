@@ -820,25 +820,30 @@ class SupabaseService {
   }
 
   /// Updates user module permissions (Warranty Module and Track Your Bearing Module)
+  /// Enforces mutual exclusivity: only one module can be active at a time.
   static Future<bool> updateUserModulePermissions({
     required String userId,
     required bool hasWarranty,
     required bool hasTrackBearing,
     String? email,
   }) async {
+    // Strictly enforce mutual exclusivity: only one module may be active at any time
+    final safeWarranty = hasWarranty && !hasTrackBearing;
+    final safeTrack = hasTrackBearing;
+
     if (_isInitialized) {
       // 1. Try authoritative RPC admin_update_user_module_permissions
       try {
         await client.rpc('admin_update_user_module_permissions', params: {
           'p_target_user_id': userId,
-          'p_has_warranty': hasWarranty,
-          'p_has_track_bearing': hasTrackBearing,
+          'p_has_warranty': safeWarranty,
+          'p_has_track_bearing': safeTrack,
         });
         await _updateOfflineUserModulePermissions(
           userId: userId,
           email: email,
-          hasWarranty: hasWarranty,
-          hasTrackBearing: hasTrackBearing,
+          hasWarranty: safeWarranty,
+          hasTrackBearing: safeTrack,
         );
         return true;
       } catch (_) {}
@@ -846,16 +851,16 @@ class SupabaseService {
       // 2. Direct table update fallback
       try {
         await client.from('profiles').update({
-          'has_warranty_access': hasWarranty,
-          'has_track_bearing_access': hasTrackBearing,
+          'has_warranty_access': safeWarranty,
+          'has_track_bearing_access': safeTrack,
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', userId);
 
         await _updateOfflineUserModulePermissions(
           userId: userId,
           email: email,
-          hasWarranty: hasWarranty,
-          hasTrackBearing: hasTrackBearing,
+          hasWarranty: safeWarranty,
+          hasTrackBearing: safeTrack,
         );
         return true;
       } catch (e) {
@@ -866,8 +871,8 @@ class SupabaseService {
     await _updateOfflineUserModulePermissions(
       userId: userId,
       email: email,
-      hasWarranty: hasWarranty,
-      hasTrackBearing: hasTrackBearing,
+      hasWarranty: safeWarranty,
+      hasTrackBearing: safeTrack,
     );
     return true;
   }

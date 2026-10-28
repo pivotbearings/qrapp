@@ -6,6 +6,7 @@ import '../../domain/models/bearing_authentication_result.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
 
 import '../../../rewards/data/services/reward_service.dart';
+import '../../../rewards/domain/models/reward_models.dart';
 
 /// Pivot Bearings India - Authoritative Bearing Authentication Service
 ///
@@ -32,18 +33,21 @@ class BearingAuthenticationService {
     return id;
   }
 
-  /// Primary Authentication Pipeline with 1st-Scan Reward Hook
+  /// Primary Authentication Pipeline
   static Future<BearingAuthenticationResult> authenticateBearing(String rawPayload) async {
     final res = await _authenticateBearingInternal(rawPayload);
     if (res.isAuthentic && !res.isAlreadyOut) {
       try {
-        final reward = await RewardService.claimBearingScanReward(
-          rawPayloadOrId: rawPayload,
-          sourceModule: 'AUTHENTICATE_BEARING',
-        );
-        return res.copyWithReward(reward);
+        final isClaimed = await RewardService.isBearingRewardClaimed(rawPayload);
+        if (isClaimed) {
+          return res.copyWithReward(const RewardClaimResult(
+            rewardAwarded: false,
+            alreadyClaimed: true,
+            message: 'First-scan reward has already been claimed for this bearing.',
+          ));
+        }
       } catch (e) {
-        debugPrint('Authentication reward hook error: $e');
+        debugPrint('Authentication reward check error: $e');
       }
     }
     return res;

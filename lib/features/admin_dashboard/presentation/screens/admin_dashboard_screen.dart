@@ -333,20 +333,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             child: Row(
               children: [
-                Container(
-                  width: 28,
+                Image.asset(
+                  'assets/company_logo.webp',
                   height: 28,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                    border: Border.all(color: AppColors.primary, width: 1.2),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Image.asset(
-                    'assets/webappicon.png',
-                    width: 28,
-                    height: 28,
-                    fit: BoxFit.cover,
-                  ),
+                  fit: BoxFit.contain,
                 ),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -464,20 +454,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 28,
+                  Image.asset(
+                    'assets/company_logo.webp',
                     height: 28,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                      border: Border.all(color: AppColors.primary, width: 1.2),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image.asset(
-                      'assets/webappicon.png',
-                      width: 28,
-                      height: 28,
-                      fit: BoxFit.cover,
-                    ),
+                    fit: BoxFit.contain,
                   ),
                   const SizedBox(width: 10),
                   Expanded(

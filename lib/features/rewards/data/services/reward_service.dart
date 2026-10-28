@@ -7,6 +7,8 @@ import '../../../../core/auth/auth_controller.dart';
 import '../../domain/models/reward_models.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 
+export '../../domain/models/reward_models.dart';
+
 /// Pivot Bearings India - Authoritative Reward Service
 ///
 /// Handles atomic 1st-scan reward claims, user wallet balances,
@@ -18,19 +20,27 @@ class RewardService {
   static const String _prefKeyOfflineSettings = 'pbi_offline_reward_settings';
 
   // ===========================================================================
-  // 1. ATOMIC 1ST-SCAN REWARD CLAIM (Across All Modules)
+  // 1. ATOMIC 1ST-SCAN REWARD CLAIM (With Mandatory Supplier Details)
   // ===========================================================================
-  /// Invoked whenever a bearing QR code is scanned in:
-  /// - Authenticate Bearing
-  /// - Track Bearing In/Out
-  /// - Warranty Check & In/Out flow
+  /// Invoked whenever a user claims reward points for an authentic bearing QR code.
+  /// Supplier Name and Supplier Contact Number are strictly mandatory.
   static Future<RewardClaimResult> claimBearingScanReward({
     required String rawPayloadOrId,
     required String sourceModule,
+    required String supplierName,
+    required String supplierContact,
   }) async {
     final clean = rawPayloadOrId.trim();
+    final cleanSuppName = supplierName.trim();
+    final cleanSuppContact = supplierContact.trim();
+
     if (clean.isEmpty) {
       return RewardClaimResult.empty(message: 'Invalid code.');
+    }
+    if (cleanSuppName.isEmpty || cleanSuppContact.isEmpty) {
+      return RewardClaimResult.empty(
+        message: 'Supplier Name and Contact Number are mandatory when claiming Reward Points.',
+      );
     }
 
     if (SupabaseService.isInitialized) {
@@ -40,6 +50,8 @@ class RewardService {
           params: {
             'p_bearing_id': clean,
             'p_source_module': sourceModule,
+            'p_supplier_name': cleanSuppName,
+            'p_supplier_contact': cleanSuppContact,
           },
         );
 
@@ -53,7 +65,34 @@ class RewardService {
     }
 
     // Offline / Local Resilience Fallback
-    return await _localClaimBearingReward(clean, sourceModule);
+    return await _localClaimBearingReward(
+      clean,
+      sourceModule,
+      supplierName: cleanSuppName,
+      supplierContact: cleanSuppContact,
+    );
+  }
+
+  /// Checks if reward has already been claimed for a given bearing ID
+  static Future<bool> isBearingRewardClaimed(String rawPayloadOrId) async {
+    final clean = rawPayloadOrId.trim();
+    if (clean.isEmpty) return false;
+    final bearingId = _extractBearingId(clean);
+    if (SupabaseService.isInitialized) {
+      try {
+        final res = await SupabaseService.client
+            .from('qr_codes')
+            .select('is_reward_claimed')
+            .or('bearing_id.eq.$bearingId,payload_value.eq.$clean')
+            .maybeSingle();
+        if (res != null && res['is_reward_claimed'] == true) {
+          return true;
+        }
+      } catch (_) {}
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final claimedList = prefs.getStringList(_prefKeyOfflineClaimedBearings) ?? [];
+    return claimedList.contains(bearingId);
   }
 
   // ===========================================================================
@@ -474,11 +513,25 @@ class RewardService {
   // ===========================================================================
   // 6. LOCAL RESILIENCE / OFFLINE FALLBACK IMPLEMENTATION
   // ===========================================================================
-  static Future<RewardClaimResult> _localClaimBearingReward(String rawPayload, String sourceModule) async {
+  static Future<RewardClaimResult> _localClaimBearingReward(
+    String rawPayload,
+    String sourceModule, {
+    String? supplierName,
+    String? supplierContact,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final claimedList = prefs.getStringList(_prefKeyOfflineClaimedBearings) ?? [];
     final bearingId = _extractBearingId(rawPayload);
     final userEmail = AuthController.instance.userEmail ?? 'default_user';
+
+    final cleanName = supplierName?.trim() ?? '';
+    final cleanContact = supplierContact?.trim() ?? '';
+
+    if (cleanName.isEmpty || cleanContact.isEmpty) {
+      return RewardClaimResult.empty(
+        message: 'Supplier Name and Contact Number are mandatory when claiming Reward Points.',
+      );
+    }
 
     // Check if user is blocked from receiving rewards
     final isBlocked = prefs.getBool('offline_reward_eligible_$userEmail') == false;
@@ -511,6 +564,8 @@ class RewardService {
 
     claimedList.add(bearingId);
     await prefs.setStringList(_prefKeyOfflineClaimedBearings, claimedList);
+    await prefs.setString('pbi_supplier_name_$bearingId', cleanName);
+    await prefs.setString('pbi_supplier_contact_$bearingId', cleanContact);
 
     final curBal = prefs.getInt('${_prefKeyOfflineWallet}balance_$userEmail') ?? 0;
     final totalEarned = prefs.getInt('${_prefKeyOfflineWallet}earned_$userEmail') ?? 0;
@@ -526,7 +581,9 @@ class RewardService {
       amountInr: inr,
       rateDisplay: '${settings.pointsBaseUnit} Points = ₹${settings.inrPerBaseUnit.toStringAsFixed(2)}',
       newBalance: newBal,
-      message: 'First-scan reward claimed!',
+      supplierName: cleanName,
+      supplierContact: cleanContact,
+      message: 'Congratulations! $points Reward Points added to your Pivot Wallet.',
     );
   }
 

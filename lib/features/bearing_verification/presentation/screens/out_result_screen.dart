@@ -260,14 +260,11 @@ class _OutResultScreenState extends State<OutResultScreen> {
 • *Bearing QR Serial:* ${widget.bearingId}
 • *Model / Part No:* ${_bearing?.modelNumber ?? 'PBI-Standard'}
 • *Assigned Product:* $pName
-• *Warranty Coverage:* $warrantyCoverage
 • *Batch Code:* ${_bearing?.batchCode ?? 'BATCH-ACTIVE'}
-• *Plant Location:* ${_bearing?.plantLocation ?? 'Plant 02 — Chakan Industrial Complex'}
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $cycleSummary
-• *Warranty Status:* $warrantyStatusStr
-• *Operating Status:* Decommissioned / Final Out$notesLine
+• *Operating Status:* Decommissioned / Tracked Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Bearing Traceability & Authenticity Ledger
 '''.trim();

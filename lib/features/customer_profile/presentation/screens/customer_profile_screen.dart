@@ -52,6 +52,135 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     AppSnackBar.showSuccess(context, msg);
   }
 
+  void _showEditProfileDialog() {
+    final auth = AuthController.instance;
+    final currentName = (auth.userName?.isNotEmpty == true && auth.userName != 'Operator')
+        ? auth.userName!
+        : (_userProfile?['full_name']?.toString() ?? '');
+    final currentCompany = auth.userCompany ?? (_userProfile?['company_name']?.toString() ?? '');
+    final currentPhone = auth.userPhone ?? (_userProfile?['phone']?.toString() ?? '');
+
+    final nameCtrl = TextEditingController(text: currentName);
+    final companyCtrl = TextEditingController(text: currentCompany);
+    final phoneCtrl = TextEditingController(text: currentPhone);
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppColors.background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppColors.primary, width: 1.5),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.edit_note_rounded, color: AppColors.primary, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Edit Customer Profile',
+                  style: AppTypography.headlineSm.copyWith(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Full Name / Customer Name *', style: AppTypography.caption),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Enter your name',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Company Name', style: AppTypography.caption),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: companyCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Enter company name',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Contact Phone', style: AppTypography.caption),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    hintText: '+91 98765 43210',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.primary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.background,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final newName = nameCtrl.text.trim();
+                if (newName.isEmpty) {
+                  AppSnackBar.showError(ctx, 'Name cannot be empty');
+                  return;
+                }
+                Navigator.pop(ctx);
+                final ok = await AuthController.instance.updateCustomerProfile(
+                  fullName: newName,
+                  companyName: companyCtrl.text.trim(),
+                  phone: phoneCtrl.text.trim(),
+                );
+                if (mounted) {
+                  if (ok) {
+                    AppSnackBar.showSuccess(context, 'Profile updated successfully!');
+                    _loadData();
+                  } else {
+                    AppSnackBar.showError(context, 'Failed to update profile');
+                  }
+                }
+              },
+              child: const Text('Save Profile'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _handleSignOut() async {
     await AuthController.instance.signOut();
     if (!mounted) return;
@@ -80,9 +209,26 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text(
-                      loc.translate('customer_profile'),
-                      style: AppTypography.headlineLgMobile,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          loc.translate('customer_profile'),
+                          style: AppTypography.headlineLgMobile,
+                        ),
+                        TextButton.icon(
+                          onPressed: _showEditProfileDialog,
+                          icon: const Icon(Icons.edit, size: 16, color: AppColors.primary),
+                          label: const Text(
+                            'EDIT PROFILE',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: AppDimensions.spaceMd),
 

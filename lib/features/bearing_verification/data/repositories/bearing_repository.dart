@@ -11,6 +11,7 @@ import '../../../qr_generation/domain/services/bearing_encryption_key_service.da
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 import '../../domain/services/warranty_calculator.dart';
 import '../../../rewards/data/services/reward_service.dart';
+import '../../../rewards/domain/models/reward_models.dart';
 
 abstract class BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload);
@@ -55,13 +56,16 @@ class BearingRepositoryImpl implements BearingRepository {
     if (res.status == QrVerificationStatus.validNotActivated ||
         res.status == QrVerificationStatus.validWarrantyActive) {
       try {
-        final reward = await RewardService.claimBearingScanReward(
-          rawPayloadOrId: payload,
-          sourceModule: 'WARRANTY_FLOW',
-        );
-        return res.copyWithReward(reward);
+        final isClaimed = await RewardService.isBearingRewardClaimed(payload);
+        if (isClaimed) {
+          return res.copyWithReward(const RewardClaimResult(
+            rewardAwarded: false,
+            alreadyClaimed: true,
+            message: 'First-scan reward has already been claimed for this bearing.',
+          ));
+        }
       } catch (e) {
-        debugPrint('Warranty verification reward hook error: $e');
+        debugPrint('Reward check error: $e');
       }
     }
     return res;
@@ -605,6 +609,7 @@ class BearingRepositoryImpl implements BearingRepository {
                 'current_lifecycle_state': 'CURRENTLY_IN',
                 'first_in_timestamp': now.toIso8601String(),
                 'last_in_timestamp': now.toIso8601String(),
+                'assigned_customer_id': AuthController.instance.userId,
                 'updated_at': now.toIso8601String(),
               })
               .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
@@ -616,6 +621,12 @@ class BearingRepositoryImpl implements BearingRepository {
     await prefs.setString('pbi_track_state_$cleanId', 'IN');
     await prefs.setString('pbi_track_in_time_$cleanId', now.toIso8601String());
     await prefs.setString('pbi_bearing_state_$cleanId', 'CURRENTLY_IN');
+
+    final trackedList = prefs.getStringList('pbi_tracked_bearings_list') ?? [];
+    if (!trackedList.contains(cleanId)) {
+      trackedList.insert(0, cleanId);
+      await prefs.setStringList('pbi_tracked_bearings_list', trackedList);
+    }
 
     final updated = BearingModel(
       id: existing.id,
@@ -716,6 +727,7 @@ class BearingRepositoryImpl implements BearingRepository {
               .update({
                 'current_lifecycle_state': 'CURRENTLY_OUT',
                 'last_out_timestamp': now.toIso8601String(),
+                'assigned_customer_id': AuthController.instance.userId,
                 'updated_at': now.toIso8601String(),
               })
               .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
@@ -732,6 +744,12 @@ class BearingRepositoryImpl implements BearingRepository {
     await prefs.setString('pbi_track_state_$cleanId', 'FINAL_OUT');
     await prefs.setString('pbi_track_out_time_$cleanId', now.toIso8601String());
     await prefs.setString('pbi_bearing_state_$cleanId', 'CURRENTLY_OUT');
+
+    final trackedList = prefs.getStringList('pbi_tracked_bearings_list') ?? [];
+    if (!trackedList.contains(cleanId)) {
+      trackedList.insert(0, cleanId);
+      await prefs.setStringList('pbi_tracked_bearings_list', trackedList);
+    }
 
     // Sync TrackBearingScreen history
     final historyKey = 'pbi_track_history_$cleanId';
@@ -814,6 +832,7 @@ class BearingRepositoryImpl implements BearingRepository {
               model_number,
               current_lifecycle_state,
               first_in_timestamp,
+              last_out_timestamp,
               warranty_expiry_timestamp,
               assigned_customer_id,
               qr_batches (batch_code, plant_location),
@@ -844,6 +863,7 @@ class BearingRepositoryImpl implements BearingRepository {
           }
 
           final firstIn = m['first_in_timestamp'] != null ? DateTime.tryParse(m['first_in_timestamp'].toString()) : null;
+          final lastOut = m['last_out_timestamp'] != null ? DateTime.tryParse(m['last_out_timestamp'].toString()) : null;
           final expiry = m['warranty_expiry_timestamp'] != null ? DateTime.tryParse(m['warranty_expiry_timestamp'].toString()) : null;
 
           int dur = 6;
@@ -864,9 +884,22 @@ class BearingRepositoryImpl implements BearingRepository {
             assignedCustomerId: m['assigned_customer_id']?.toString(),
             firstInDate: firstIn,
             lastInDate: firstIn,
+            lastOutDate: lastOut,
             explicitExpiryDate: expiry,
           );
         }).toList();
+
+        // Merge locally tracked bearings if not already included
+        final prefs = await SharedPreferences.getInstance();
+        final localTracked = prefs.getStringList('pbi_tracked_bearings_list') ?? [];
+        for (final tid in localTracked) {
+          if (!list.any((b) => b.id.toUpperCase() == tid.toUpperCase())) {
+            final localModel = await getBearingById(tid);
+            if (localModel != null) {
+              list.add(localModel);
+            }
+          }
+        }
 
         return list;
       } catch (e) {

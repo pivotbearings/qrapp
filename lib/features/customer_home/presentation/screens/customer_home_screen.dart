@@ -28,16 +28,19 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   int _inCount = 0;
   int _outCount = 0;
   int _activeCount = 0;
+  int _underWarrantyCount = 0;
+  int _expiringSoonCount = 0;
+  int _expiredWarrantyCount = 0;
   bool _isNavigating = false;
   RewardProfile _rewardProfile = RewardProfile.defaultProfile();
   AdBannerConfig _adConfig = AdBannerConfig.defaultConfig();
   StreamSubscription<AdBannerConfig>? _adBannerSub;
   RealtimeChannel? _supabaseAdChannel;
 
-  void _safeNavigate(String routeName) {
+  void _safeNavigate(String routeName, {Object? arguments}) {
     if (_isNavigating) return;
     setState(() => _isNavigating = true);
-    Navigator.pushNamed(context, routeName).then((_) {
+    Navigator.pushNamed(context, routeName, arguments: arguments).then((_) {
       if (mounted) {
         setState(() {
           _isNavigating = false;
@@ -128,7 +131,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       setState(() {
         _inCount = bearings.where((b) => b.state == BearingLifecycleState.currentlyIn).length;
         _outCount = bearings.where((b) => b.state == BearingLifecycleState.currentlyOut).length;
-        _activeCount = bearings.where((b) => !b.isWarrantyExpired && b.state != BearingLifecycleState.notActivated).length;
+        _underWarrantyCount = bearings.where((b) => b.isUnderWarranty).length;
+        _expiringSoonCount = bearings.where((b) => b.isExpiringSoon).length;
+        _expiredWarrantyCount = bearings.where((b) => b.isWarrantyExpired).length;
+        _activeCount = _underWarrantyCount;
       });
     }
 
@@ -179,41 +185,45 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // Header & Brand Title
+                            // Header & Brand Title with Personalized Customer Greeting (Requirement 2)
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Expanded(
                                   child: Row(
                                     children: [
-                                      Container(
-                                        width: 38,
+                                      Image.asset(
+                                        'assets/company_logo.webp',
                                         height: 38,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                                          border: Border.all(color: AppColors.primary, width: 1.2),
-                                        ),
-                                        clipBehavior: Clip.antiAlias,
-                                        child: Image.asset(
-                                          'assets/webappicon.png',
-                                          width: 38,
-                                          height: 38,
-                                          fit: BoxFit.cover,
-                                        ),
+                                        fit: BoxFit.contain,
                                       ),
-                                      const SizedBox(width: 10),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              'PIVOT BEARINGS',
-                                              style: AppTypography.headlineSm.copyWith(
-                                                fontWeight: FontWeight.w900,
-                                                letterSpacing: 1.2,
+                                              'Namaste, ${auth.userName?.trim().isNotEmpty == true && auth.userName != "Operator" ? auth.userName!.trim() : "Valued Customer"}',
+                                              style: const TextStyle(
                                                 color: AppColors.primary,
-                                                fontSize: 16,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 15,
+                                                letterSpacing: -0.2,
                                               ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            Text(
+                                              auth.userCompany?.trim().isNotEmpty == true
+                                                  ? auth.userCompany!.trim()
+                                                  : 'Pivot Precision Partner',
+                                              style: TextStyle(
+                                                color: Colors.black.withOpacity(0.55),
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 10.5,
+                                              ),
+                                              maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ],
@@ -307,35 +317,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                               const SizedBox(height: AppDimensions.spaceMd),
                             ],
 
-                            // Dynamic Metric Row (visible if Warranty or Track module is enabled)
-                            if (auth.hasTrackBearingAccess || auth.hasWarrantyAccess) ...[
-                              Row(
-                                children: [
-                                  if (auth.hasTrackBearingAccess) ...[
-                                    Expanded(
-                                      child: _buildMetricTile(count: '$_inCount', label: loc.translate('currently_in')),
-                                    ),
-                                    const SizedBox(width: AppDimensions.spaceSm),
-                                    Expanded(
-                                      child: _buildMetricTile(count: '$_outCount', label: loc.translate('currently_out')),
-                                    ),
-                                  ],
-                                  if (auth.hasTrackBearingAccess && auth.hasWarrantyAccess)
-                                    const SizedBox(width: AppDimensions.spaceSm),
-                                  if (auth.hasWarrantyAccess)
-                                    Expanded(
-                                      child: InkWell(
-                                        mouseCursor: SystemMouseCursors.click,
-                                        onTap: () => _safeNavigate(AppRoutes.warrantyCheck),
-                                        borderRadius: BorderRadius.circular(24),
-                                        child: _buildMetricTile(
-                                          count: '$_activeCount',
-                                          label: loc.translate('active_warranties'),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
+                            // Dynamic Metric Row / Dashboard:
+                            // Requirement 3: Both modules must not be active simultaneously.
+                            // Requirement 8: When Warranty is enabled, display 3 summary counts (Under Warranty, Expiring Soon, Warranty Expired).
+                            // Requirement 7: When Track Your Bearing is enabled, display two separate options (Product In, Product Out).
+                            if (auth.hasWarrantyAccess) ...[
+                              _buildWarrantyDashboard(),
+                              const SizedBox(height: AppDimensions.spaceMd),
+                            ] else if (auth.hasTrackBearingAccess) ...[
+                              _buildTrackBearingDashboard(),
                               const SizedBox(height: AppDimensions.spaceMd),
                             ] else ...[
                               // Standard default badge for newly registered users
@@ -352,14 +342,17 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         ),
 
                         // --- BOTTOM SECTION (Anchored at the bottom above navigation bar) ---
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SizedBox(height: AppDimensions.spaceSm),
-                            _buildRewardWalletCard(),
-                            const SizedBox(height: AppDimensions.spaceSm),
-                          ],
-                        ),
+                        // Requirement 2: If admin disables Reward Points, hide Reward Points Wallet
+                        if (_rewardProfile.isEnabled && _rewardProfile.isRewardEligible) ...[
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: AppDimensions.spaceSm),
+                              _buildRewardWalletCard(),
+                              const SizedBox(height: AppDimensions.spaceSm),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -755,6 +748,246 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             label: item.label,
           );
         }).toList(),
+      ),
+    );
+  }
+
+  /// Requirement 7: When only Track Your Bearing is enabled, display two separate options:
+  /// - Product In: Bearings currently tracked in
+  /// - Product Out: Bearings that have been tracked out
+  Widget _buildTrackBearingDashboard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildTrackBearingOptionCard(
+                title: 'Product In',
+                subtitle: 'Currently tracked in',
+                count: '$_inCount',
+                icon: Icons.login_rounded,
+                accentColor: const Color(0xFF0D8A4E),
+                bgColor: const Color(0xFFE8F5E9),
+                onTap: () => _safeNavigate(AppRoutes.trackBearing, arguments: 1),
+              ),
+            ),
+            const SizedBox(width: AppDimensions.spaceSm),
+            Expanded(
+              child: _buildTrackBearingOptionCard(
+                title: 'Product Out',
+                subtitle: 'Tracked out bearings',
+                count: '$_outCount',
+                icon: Icons.logout_rounded,
+                accentColor: const Color(0xFFD32F2F),
+                bgColor: const Color(0xFFFFEBEE),
+                onTap: () => _safeNavigate(AppRoutes.trackBearing, arguments: 2),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrackBearingOptionCard({
+    required String title,
+    required String subtitle,
+    required String count,
+    required IconData icon,
+    required Color accentColor,
+    required Color bgColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: accentColor.withValues(alpha: 0.6), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: accentColor, size: 18),
+                ),
+                Text(
+                  count,
+                  style: AppTypography.headlineMd.copyWith(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 22,
+                    color: accentColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: AppTypography.labelMd.copyWith(
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: AppTypography.caption.copyWith(
+                fontSize: 10.5,
+                color: Colors.black54,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Requirement 8: When the Warranty module is enabled, display three summary counts:
+  /// - Under Warranty: Total bearings currently under warranty
+  /// - Expiring Soon: Total bearings whose warranty is nearing expiration (20% near time of expiry)
+  /// - Warranty Expired: Total bearings whose warranty has expired
+  Widget _buildWarrantyDashboard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildWarrantySummaryCard(
+                title: 'Under Warranty',
+                subtitle: 'Active coverage',
+                count: '$_underWarrantyCount',
+                icon: Icons.shield_rounded,
+                accentColor: const Color(0xFF16A34A),
+                bgColor: const Color(0xFFDCFCE7),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 1).then((_) => _loadDashboardData()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildWarrantySummaryCard(
+                title: 'Expiring Soon',
+                subtitle: 'Near expiry (≤20%)',
+                count: '$_expiringSoonCount',
+                icon: Icons.timer_outlined,
+                accentColor: const Color(0xFFD97706),
+                bgColor: const Color(0xFFFEF3C7),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 2).then((_) => _loadDashboardData()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildWarrantySummaryCard(
+                title: 'Warranty Expired',
+                subtitle: 'Coverage ended',
+                count: '$_expiredWarrantyCount',
+                icon: Icons.cancel_outlined,
+                accentColor: const Color(0xFFDC2626),
+                bgColor: const Color(0xFFFEE2E2),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 3).then((_) => _loadDashboardData()),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWarrantySummaryCard({
+    required String title,
+    required String subtitle,
+    required String count,
+    required IconData icon,
+    required Color accentColor,
+    required Color bgColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accentColor.withValues(alpha: 0.6), width: 1.4),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: bgColor,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: accentColor, size: 16),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              count,
+              style: AppTypography.headlineMd.copyWith(
+                fontWeight: FontWeight.w900,
+                fontSize: 19,
+                color: accentColor,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 9.5,
+                color: AppColors.primary,
+                letterSpacing: 0.2,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 8.5,
+                color: Colors.black54,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

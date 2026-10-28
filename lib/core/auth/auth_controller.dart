@@ -43,9 +43,10 @@ class AuthController extends ChangeNotifier {
   // Getters
   AppRole get role => _role;
   bool get isAuthenticated => _isAuthenticated;
-  bool get isApproved => isAdmin || _isApproved;
-  bool get hasWarrantyAccess => isAdmin || _hasWarrantyAccess;
-  bool get hasTrackBearingAccess => isAdmin || _hasTrackBearingAccess;
+  bool get isApproved => true; // All registered users are approved; pending verification screen removed
+  // Mutually exclusive: only one module may be active at any time
+  bool get hasWarrantyAccess => _hasWarrantyAccess && !_hasTrackBearingAccess;
+  bool get hasTrackBearingAccess => _hasTrackBearingAccess && !_hasWarrantyAccess;
   bool get hasBearingAuthenticationAccess => true; // Always permitted
   List<String> get authorisedNumbers => List.unmodifiable(_authorisedNumbers);
   String? get userId => _userId;
@@ -181,6 +182,9 @@ class AuthController extends ChangeNotifier {
       final cachedTrack = prefs.getBool('offline_track_$cleanEmail');
       if (cachedWarranty != null) _hasWarrantyAccess = cachedWarranty;
       if (cachedTrack != null) _hasTrackBearingAccess = cachedTrack;
+      if (_hasWarrantyAccess && _hasTrackBearingAccess) {
+        _hasTrackBearingAccess = false;
+      }
 
       final cachedNumbers = prefs.getStringList('offline_authorised_numbers_$cleanEmail');
       if (cachedNumbers != null && cachedNumbers.isNotEmpty) {
@@ -211,8 +215,11 @@ class AuthController extends ChangeNotifier {
           changed = true;
         }
 
-        final newWarranty = res['has_warranty_access'] == true;
-        final newTrack = res['has_track_bearing_access'] == true;
+        bool newWarranty = res['has_warranty_access'] == true;
+        bool newTrack = res['has_track_bearing_access'] == true;
+        if (newWarranty && newTrack) {
+          newTrack = false;
+        }
         final newApproval = res['is_approved'] == true;
 
         if (_hasWarrantyAccess != newWarranty || _hasTrackBearingAccess != newTrack || _isApproved != newApproval) {
@@ -310,6 +317,64 @@ class AuthController extends ChangeNotifier {
     await _loadProfileMetadata(_userId!);
     await _persistSession();
     notifyListeners();
+  }
+
+  /// Updates the user's profile metadata in Supabase & memory, dynamically updating all listeners
+  Future<bool> updateCustomerProfile({
+    required String fullName,
+    String? companyName,
+    String? phone,
+  }) async {
+    final cleanName = fullName.trim();
+    if (cleanName.isEmpty) return false;
+
+    _userName = cleanName;
+    if (companyName != null && companyName.trim().isNotEmpty) {
+      _userCompany = companyName.trim();
+    }
+    if (phone != null && phone.trim().isNotEmpty) {
+      _userPhone = phone.trim();
+    }
+
+    notifyListeners();
+
+    try {
+      if (SupabaseService.isInitialized && _userId != null) {
+        final updateMap = <String, dynamic>{
+          'full_name': cleanName,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        if (companyName != null && companyName.trim().isNotEmpty) {
+          updateMap['company_name'] = companyName.trim();
+        }
+        if (phone != null && phone.trim().isNotEmpty) {
+          updateMap['phone'] = phone.trim();
+        }
+
+        await SupabaseService.client
+            .from('profiles')
+            .update(updateMap)
+            .eq('id', _userId!);
+
+        try {
+          await SupabaseService.client.auth.updateUser(
+            UserAttributes(
+              data: {
+                'full_name': cleanName,
+                if (companyName != null && companyName.trim().isNotEmpty) 'company_name': companyName.trim(),
+                if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+              },
+            ),
+          );
+        } catch (_) {}
+      }
+
+      await _persistSession();
+      return true;
+    } catch (e) {
+      debugPrint('Error updating customer profile: $e');
+      return false;
+    }
   }
 
   /// Authoritative query to Supabase backend for role determination
@@ -565,7 +630,7 @@ class AuthController extends ChangeNotifier {
 
       final user = res!.user!;
 
-      // Guarantee profile entry exists with all mandatory fields and unapproved status
+      // Guarantee profile entry exists with all mandatory fields and approved status
       try {
         await SupabaseService.client.from('profiles').upsert({
           'id': user.id,
@@ -574,18 +639,18 @@ class AuthController extends ChangeNotifier {
           'company_name': cleanCompany,
           'phone': cleanPhone,
           'facility_code': safeFac,
-          'is_approved': false,
+          'is_approved': true,
           'is_active': true,
           'has_warranty_access': false,
           'has_track_bearing_access': false,
         });
 
-        // Register in offline sync cache for immediate admin visibility
+        // Register in offline sync cache
         await SupabaseService.updateUserRoleAndClearance(
           userId: user.id,
           email: cleanEmail,
           role: 'USER',
-          isApproved: false,
+          isApproved: true,
         );
         await SupabaseService.updateUserModulePermissions(
           userId: user.id,
@@ -595,7 +660,7 @@ class AuthController extends ChangeNotifier {
         );
       } catch (_) {}
 
-      // Guarantee user_roles table receives pending user record immediately
+      // Guarantee user_roles table receives user record immediately
       try {
         await SupabaseService.client.from('user_roles').upsert({
           'user_id': user.id,
@@ -603,54 +668,17 @@ class AuthController extends ChangeNotifier {
         });
       } catch (_) {}
 
-      // Check if session was granted immediately
-      if (res.session != null) {
-        _userId = user.id;
-        _userEmail = user.email;
-        _userName = cleanName;
-        _userCompany = cleanCompany;
-        _userPhone = cleanPhone;
-        _isAuthenticated = true;
-        _role = await _fetchRoleFromSupabase(user.id);
-        _isApproved = await _fetchApprovalFromSupabase(user.id);
-        await _persistSession();
-        return SignUpResult(
-          success: true,
-          sessionActive: true,
-          message: 'Account successfully registered.',
-        );
-      } else {
-        // Email confirmation check / auto-confirm fallback
-        try {
-          final signInRes = await SupabaseService.signInWithEmailPassword(
-            email: cleanEmail,
-            password: cleanPassword,
-          );
-          if (signInRes?.user != null && signInRes?.session != null) {
-            _userId = signInRes!.user!.id;
-            _userEmail = signInRes.user!.email;
-            _userName = cleanName;
-            _userCompany = cleanCompany;
-            _userPhone = cleanPhone;
-            _isAuthenticated = true;
-            _role = await _fetchRoleFromSupabase(_userId!);
-            _isApproved = await _fetchApprovalFromSupabase(_userId!);
-            await _persistSession();
-            return SignUpResult(
-              success: true,
-              sessionActive: true,
-              message: 'Account created and authenticated successfully.',
-            );
-          }
-        } catch (_) {}
+      // Sign out from any temporary sign up session so the user signs in cleanly
+      try {
+        await SupabaseService.signOut();
+      } catch (_) {}
+      _resetToUnauthenticated();
 
-        return SignUpResult(
-          success: true,
-          sessionActive: false,
-          message:
-              'Account created! Awaiting administrator clearance before application access is granted.',
-        );
-      }
+      return const SignUpResult(
+        success: true,
+        sessionActive: false,
+        message: 'Account created successfully! Please sign in with your email and password.',
+      );
     } on AuthException catch (e) {
       throw Exception(e.message);
     } catch (e) {
