@@ -136,22 +136,6 @@ class LifecycleEmailService {
     final statusColor = isUnderWarranty ? '#16A34A' : '#DC2626';
     final statusText = isUnderWarranty ? 'UNDER WARRANTY' : 'WARRANTY EXPIRED';
 
-    final cyclesHtml = cycleRecords.isEmpty
-        ? '<tr><td colspan="3" style="padding: 10px; text-align: center; color: #64748B; font-size: 12px;">Primary operating cycle closed.</td></tr>'
-        : cycleRecords.map((c) {
-            final cycleNum = c['cycle_number'] ?? '—';
-            final dur = c['duration'] ?? '—';
-            final inTime = c['in_time'] ?? '—';
-            final outTime = c['out_time'] ?? '—';
-            return '''
-              <tr>
-                <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 12px; font-weight: bold; color: #0F172A;">Cycle #$cycleNum</td>
-                <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 12px; color: #334155;">$inTime → $outTime</td>
-                <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 12px; font-weight: bold; color: #DC2626; text-align: right;">$dur</td>
-              </tr>
-            ''';
-          }).join('');
-
     return '''
 <!DOCTYPE html>
 <html lang="en">
@@ -234,13 +218,6 @@ class LifecycleEmailService {
             </span>
           </td>
         </tr>
-      </table>
-
-      <h3 style="font-size: 13px; font-weight: 800; color: #0F172A; text-transform: uppercase; letter-spacing: 0.5px; margin: 20px 0 8px 0;">
-        Operating Cycles Record
-      </h3>
-      <table style="width: 100%; border-collapse: collapse; background-color: #F8FAFC; border-radius: 6px; overflow: hidden; margin-bottom: 20px;">
-        $cyclesHtml
       </table>
 
       <p style="font-size: 12px; color: #64748B; margin-top: 20px; line-height: 1.4;">

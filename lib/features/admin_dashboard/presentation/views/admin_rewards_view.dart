@@ -850,6 +850,21 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
             ],
           ),
 
+          // Supplier Info (Captured on Redemption)
+          if (r.supplierName != null && r.supplierName!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.storefront_outlined, size: 15, color: Colors.black54),
+                const SizedBox(width: 6),
+                Text(
+                  'Supplier: ${r.supplierName} • Ph: ${r.supplierContact ?? "N/A"}',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                ),
+              ],
+            ),
+          ],
+
           const SizedBox(height: 8),
 
           // Payout Target Details

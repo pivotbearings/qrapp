@@ -28,6 +28,7 @@ class AuthController extends ChangeNotifier {
   bool _isApproved = false;
   bool _hasWarrantyAccess = false;
   bool _hasTrackBearingAccess = false;
+  bool _isRewardEligible = true;
   List<String> _authorisedNumbers = [];
   String? _userId;
   String? _userEmail;
@@ -48,6 +49,8 @@ class AuthController extends ChangeNotifier {
   bool get hasWarrantyAccess => _hasWarrantyAccess && !_hasTrackBearingAccess;
   bool get hasTrackBearingAccess => _hasTrackBearingAccess && !_hasWarrantyAccess;
   bool get hasBearingAuthenticationAccess => true; // Always permitted
+  bool get isRewardEligible => _isRewardEligible;
+  bool get hasRewardPointsAccess => _isRewardEligible;
   List<String> get authorisedNumbers => List.unmodifiable(_authorisedNumbers);
   String? get userId => _userId;
   String? get userEmail => _userEmail;
@@ -180,8 +183,10 @@ class AuthController extends ChangeNotifier {
     if (cleanEmail != null && cleanEmail.isNotEmpty) {
       final cachedWarranty = prefs.getBool('offline_warranty_$cleanEmail');
       final cachedTrack = prefs.getBool('offline_track_$cleanEmail');
+      final cachedReward = prefs.getBool('offline_reward_eligible_$cleanEmail');
       if (cachedWarranty != null) _hasWarrantyAccess = cachedWarranty;
       if (cachedTrack != null) _hasTrackBearingAccess = cachedTrack;
+      if (cachedReward != null) _isRewardEligible = cachedReward;
       if (_hasWarrantyAccess && _hasTrackBearingAccess) {
         _hasTrackBearingAccess = false;
       }
@@ -196,7 +201,7 @@ class AuthController extends ChangeNotifier {
     try {
       final res = await SupabaseService.client
           .from('profiles')
-          .select('company_name, phone, full_name, facility_code, has_warranty_access, has_track_bearing_access, authorised_numbers, is_approved')
+          .select('company_name, phone, full_name, facility_code, has_warranty_access, has_track_bearing_access, authorised_numbers, is_approved, is_reward_eligible')
           .eq('id', uid)
           .maybeSingle();
       if (res != null) {
@@ -221,11 +226,16 @@ class AuthController extends ChangeNotifier {
           newTrack = false;
         }
         final newApproval = res['is_approved'] == true;
+        final newRewardEligible = res['is_reward_eligible'] != false;
 
-        if (_hasWarrantyAccess != newWarranty || _hasTrackBearingAccess != newTrack || _isApproved != newApproval) {
+        if (_hasWarrantyAccess != newWarranty ||
+            _hasTrackBearingAccess != newTrack ||
+            _isApproved != newApproval ||
+            _isRewardEligible != newRewardEligible) {
           _hasWarrantyAccess = newWarranty;
           _hasTrackBearingAccess = newTrack;
           _isApproved = newApproval;
+          _isRewardEligible = newRewardEligible;
           changed = true;
         }
 
@@ -243,6 +253,7 @@ class AuthController extends ChangeNotifier {
         if (cleanEmail != null && cleanEmail.isNotEmpty) {
           await prefs.setBool('offline_warranty_$cleanEmail', _hasWarrantyAccess);
           await prefs.setBool('offline_track_$cleanEmail', _hasTrackBearingAccess);
+          await prefs.setBool('offline_reward_eligible_$cleanEmail', _isRewardEligible);
           await prefs.setStringList('offline_authorised_numbers_$cleanEmail', _authorisedNumbers);
         }
 
@@ -263,6 +274,7 @@ class AuthController extends ChangeNotifier {
       await prefs.setBool('pbi_auth_is_approved', _isApproved);
       await prefs.setBool('pbi_auth_has_warranty', _hasWarrantyAccess);
       await prefs.setBool('pbi_auth_has_track', _hasTrackBearingAccess);
+      await prefs.setBool('pbi_auth_is_reward_eligible', _isRewardEligible);
       await prefs.setStringList('pbi_auth_authorised_numbers', _authorisedNumbers);
       await prefs.setString(
           'pbi_auth_role', _role.toString().split('.').last.toLowerCase());
@@ -281,6 +293,7 @@ class AuthController extends ChangeNotifier {
       await prefs.remove('pbi_auth_is_approved');
       await prefs.remove('pbi_auth_has_warranty');
       await prefs.remove('pbi_auth_has_track');
+      await prefs.remove('pbi_auth_is_reward_eligible');
       await prefs.remove('pbi_auth_authorised_numbers');
       await prefs.remove('pbi_auth_role');
       await prefs.remove('pbi_auth_uid');
@@ -300,6 +313,7 @@ class AuthController extends ChangeNotifier {
     _isApproved = false;
     _hasWarrantyAccess = false;
     _hasTrackBearingAccess = false;
+    _isRewardEligible = true;
     _authorisedNumbers = [];
     _role = AppRole.user;
     _userId = null;

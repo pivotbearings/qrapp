@@ -11,7 +11,7 @@ import '../../../qr_generation/domain/services/bearing_encryption_key_service.da
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 import '../../domain/services/warranty_calculator.dart';
 import '../../../rewards/data/services/reward_service.dart';
-import '../../../rewards/domain/models/reward_models.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
 
 abstract class BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload);
@@ -113,30 +113,154 @@ class BearingRepositoryImpl implements BearingRepository {
     }
 
     if (SupabaseService.isInitialized) {
-      // Step 1: Direct Supabase query to `qr_codes`
-      // Authoritative, real-time across all mobile and web devices, immune to overloaded RPC issues
+      // Step 1: Prioritize authoritative server-side RPC verify_bearing_qr
       try {
-        final row = await SupabaseService.client
-            .from('qr_codes')
-            .select('''
-              id,
-              bearing_id,
-              model_number,
-              current_lifecycle_state,
-              first_in_timestamp,
-              warranty_expiry_timestamp,
-              is_flagged,
-              flag_reason,
-              qr_batches (batch_code, plant_location),
-              warranty_plans:assigned_warranty_plan_id (title, duration_months)
-            ''')
-            .or('bearing_id.eq.$bearingId,bearing_id.ilike.$bearingId,payload_value.eq.$bearingId,payload_value.ilike.$bearingId')
-            .limit(1)
-            .maybeSingle();
+        final res = await SupabaseService.client.rpc(
+          'verify_bearing_qr',
+          params: {'p_scanned_payload': cleanPayload},
+        );
+        if (res != null && res is Map) {
+          final resMap = Map<String, dynamic>.from(res);
+          if (resMap['status'] != 'INVALID' && resMap['status'] != 'NOT_FOUND') {
+            await QrManagementRepository.loadFromLocalStorage();
+            final localQr = QrManagementRepository.findQrRecord(cleanPayload) ??
+                QrManagementRepository.findQrRecord(bearingId);
+            final localDur = (localQr?['duration_months'] as num?)?.toInt();
+            final parsed = QrVerificationResult.fromJson(resMap);
+            final model = (localQr?['model_number'] != null &&
+                    localQr!['model_number'].toString().isNotEmpty &&
+                    localQr['model_number'].toString() != 'PBI-6204-ZZ')
+                ? localQr['model_number'].toString()
+                : (parsed.modelNumber != null && parsed.modelNumber != 'PBI-6204-ZZ'
+                    ? parsed.modelNumber!
+                    : 'B1');
+            final item = ItemMasterRepository().findByCode(model) ?? ItemMasterRepository().findByCode('B1');
+            final dur = localDur ?? parsed.warrantyDurationMonths ?? item?.defaultWarrantyMonths ?? 12;
+            DateTime? expiry = parsed.warrantyExpiryTimestamp;
+            if (parsed.firstInTimestamp != null) {
+              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: parsed.firstInTimestamp!, durationMonths: dur);
+            }
+
+            final finalResult = QrVerificationResult(
+              status: parsed.status,
+              bearingId: parsed.bearingId ?? bearingId,
+              batchCode: parsed.batchCode ?? 'BATCH-ACTIVE',
+              plantLocation: parsed.plantLocation ?? 'Plant 02 — Chakan Industrial Complex',
+              modelNumber: model,
+              category: parsed.category ?? item?.category ?? 'Ball Bearing',
+              productName: parsed.productName ?? item?.itemName ?? 'Bearing 1(Ball Bearing)',
+              warrantyPlanTitle: '$dur Months Industrial Warranty',
+              warrantyDurationMonths: dur,
+              currentLifecycleState: parsed.currentLifecycleState,
+              firstInTimestamp: parsed.firstInTimestamp,
+              warrantyExpiryTimestamp: expiry,
+              isExpired: expiry != null && expiry.isBefore(DateTime.now()),
+              canMarkIn: parsed.canMarkIn,
+              canMarkOut: parsed.canMarkOut,
+              payloadHash: parsed.payloadHash,
+            );
+
+            registerInMemoryBearing(BearingModel(
+              id: parsed.bearingId ?? bearingId,
+              batchCode: parsed.batchCode ?? 'BATCH-ACTIVE',
+              modelNumber: model,
+              customCategory: parsed.category ?? item?.category ?? 'Ball Bearing',
+              productName: parsed.productName ?? item?.itemName ?? 'Bearing 1(Ball Bearing)',
+              plantLocation: parsed.plantLocation ?? 'Plant 02 — Chakan Industrial Complex',
+              warrantyDurationMonths: dur,
+              state: parsed.currentLifecycleState == 'CURRENTLY_IN'
+                  ? BearingLifecycleState.currentlyIn
+                  : (parsed.currentLifecycleState == 'CURRENTLY_OUT'
+                      ? BearingLifecycleState.currentlyOut
+                      : BearingLifecycleState.notActivated),
+              firstInDate: parsed.firstInTimestamp,
+              explicitExpiryDate: expiry,
+            ));
+            return finalResult;
+          }
+        }
+      } catch (e) {
+        final errStr = e.toString().toLowerCase();
+        if (errStr.contains('socket') ||
+            errStr.contains('failed host lookup') ||
+            errStr.contains('clientexception')) {
+          return QrVerificationResult.networkUnavailable(
+            message: 'Network connection lost. Unable to contact Supabase registry.',
+          );
+        }
+      }
+
+      // Step 2: Direct Supabase query to `qr_codes`
+      try {
+        Map<String, dynamic>? row;
+        try {
+          row = await SupabaseService.client
+              .from('qr_codes')
+              .select('''
+                id,
+                bearing_id,
+                model_number,
+                current_lifecycle_state,
+                first_in_timestamp,
+                warranty_expiry_timestamp,
+                is_flagged,
+                flag_reason,
+                qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                warranty_plans:assigned_warranty_plan_id (title, duration_months)
+              ''')
+              .eq('bearing_id', bearingId)
+              .limit(1)
+              .maybeSingle();
+        } catch (_) {}
+
+        if (row == null) {
+          try {
+            row = await SupabaseService.client
+                .from('qr_codes')
+                .select('''
+                  id,
+                  bearing_id,
+                  model_number,
+                  current_lifecycle_state,
+                  first_in_timestamp,
+                  warranty_expiry_timestamp,
+                  is_flagged,
+                  flag_reason,
+                  qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                  warranty_plans:assigned_warranty_plan_id (title, duration_months)
+                ''')
+                .eq('payload_value', cleanPayload)
+                .limit(1)
+                .maybeSingle();
+          } catch (_) {}
+        }
+
+        if (row == null) {
+          try {
+            row = await SupabaseService.client
+                .from('qr_codes')
+                .select('''
+                  id,
+                  bearing_id,
+                  model_number,
+                  current_lifecycle_state,
+                  first_in_timestamp,
+                  warranty_expiry_timestamp,
+                  is_flagged,
+                  flag_reason,
+                  qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                  warranty_plans:assigned_warranty_plan_id (title, duration_months)
+                ''')
+                .ilike('bearing_id', bearingId)
+                .limit(1)
+                .maybeSingle();
+          } catch (_) {}
+        }
 
         if (row != null) {
           final batch = row['qr_batches'] as Map<String, dynamic>?;
           final plan = row['warranty_plans'] as Map<String, dynamic>?;
+          final batchPlan = batch?['warranty_plans'] as Map<String, dynamic>?;
           final state = row['current_lifecycle_state']?.toString() ?? 'NOT_ACTIVATED';
           final isFlagged = row['is_flagged'] == true;
           final isDecommissioned = state == 'CURRENTLY_OUT' ||
@@ -165,10 +289,25 @@ class BearingRepositoryImpl implements BearingRepository {
             status = QrVerificationStatus.validWarrantyActive;
           }
 
-          int dur = 6;
-          if (plan != null && plan['duration_months'] is num) {
-            dur = (plan['duration_months'] as num).toInt();
-          } else if (firstIn != null && expiry != null) {
+          await QrManagementRepository.loadFromLocalStorage();
+          final localQr = QrManagementRepository.findQrRecord(bearingId) ??
+              QrManagementRepository.findQrRecord(cleanPayload);
+          final localDur = (localQr?['duration_months'] as num?)?.toInt();
+
+          var modelNum = (localQr?['model_number'] != null &&
+                  localQr!['model_number'].toString().isNotEmpty &&
+                  localQr['model_number'] != 'PBI-6204-ZZ')
+              ? localQr['model_number'].toString()
+              : (row['model_number'] != null && row['model_number'] != 'PBI-6204-ZZ'
+                  ? row['model_number'].toString()
+                  : 'B1');
+          final item = ItemMasterRepository().findByCode(modelNum) ?? ItemMasterRepository().findByCode('B1');
+          int dur = localDur ??
+              (plan?['duration_months'] as num?)?.toInt() ??
+              (batchPlan?['duration_months'] as num?)?.toInt() ??
+              item?.defaultWarrantyMonths ?? 12;
+
+          if (firstIn != null && expiry != null && plan == null && batchPlan == null && localDur == null) {
             final diff = (expiry.year - firstIn.year) * 12 + (expiry.month - firstIn.month);
             if (diff > 0) dur = diff;
           }
@@ -176,43 +315,30 @@ class BearingRepositoryImpl implements BearingRepository {
             expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur);
           }
 
+          final finalCategory = item?.category ?? 'Ball Bearing';
+          final finalProductName = item?.itemName ?? 'Bearing 1(Ball Bearing)';
+
           return QrVerificationResult(
             status: status,
             bearingId: row['bearing_id'],
             batchCode: batch?['batch_code'] ?? 'BATCH-ACTIVE',
             plantLocation: batch?['plant_location'] ?? 'Plant 02 — Chakan',
-            modelNumber: row['model_number'] ?? 'PBI-6204-ZZ',
-            warrantyPlanTitle: plan?['title'] ?? '$dur Months Warranty',
+            modelNumber: modelNum,
+            category: finalCategory,
+            productName: finalProductName,
+            warrantyPlanTitle: plan?['title'] ?? batchPlan?['title'] ?? '$dur Months Industrial Warranty',
             warrantyDurationMonths: dur,
             currentLifecycleState: isDecommissioned ? 'FINAL_OUT' : state,
             firstInTimestamp: firstIn,
             warrantyExpiryTimestamp: expiry,
             isExpired: isExpired,
-            canMarkIn: state == 'NOT_ACTIVATED' && !isDecommissioned,
+            canMarkIn: state != 'CURRENTLY_IN' && !isDecommissioned,
             canMarkOut: state == 'CURRENTLY_IN' && !isDecommissioned,
             payloadHash: 'SHA-256: VALID',
           );
         }
       } catch (e) {
-        // Direct query encountered an error, proceed to secondary checks
-      }
-
-      // Step 2: Fall back to RPC verify_bearing_qr
-      try {
-        final res = await SupabaseService.client.rpc(
-          'verify_bearing_qr',
-          params: {'p_scanned_payload': cleanPayload},
-        );
-        return QrVerificationResult.fromJson(Map<String, dynamic>.from(res as Map));
-      } catch (e) {
-        final errStr = e.toString().toLowerCase();
-        if (errStr.contains('socket') ||
-            errStr.contains('failed host lookup') ||
-            errStr.contains('clientexception')) {
-          return QrVerificationResult.networkUnavailable(
-            message: 'Network connection lost. Unable to contact Supabase registry.',
-          );
-        }
+        // Direct query encountered an error, proceed to fallback
       }
     }
 
@@ -257,46 +383,23 @@ class BearingRepositoryImpl implements BearingRepository {
           QrManagementRepository.findQrRecord(rawPayload);
       if (qrRec != null) {
         final bId = qrRec['bearing_id']?.toString() ?? bearingId;
-        final model = qrRec['model_number']?.toString() ?? 'PBI-6204-ZZ';
-        final dur = (qrRec['duration_months'] as num?)?.toInt() ?? 6;
+        final model = qrRec['model_number']?.toString() ?? 'B1';
+        final dur = (qrRec['duration_months'] as num?)?.toInt() ?? 12;
         final batch = qrRec['batch_code']?.toString() ?? 'BATCH-ACTIVE';
-        final plant = qrRec['plant_location']?.toString() ?? 'Plant 02 — Chakan';
+        final plant = qrRec['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex';
+        final item = ItemMasterRepository().findByCode(model);
         final registered = BearingModel(
           id: bId,
           batchCode: batch,
           modelNumber: model,
+          customCategory: qrRec['category']?.toString() ?? item?.category ?? 'Ball Bearing',
+          productName: qrRec['product_name']?.toString() ?? item?.itemName ?? 'Bearing 1(Ball Bearing)',
           plantLocation: plant,
           warrantyDurationMonths: dur,
           state: BearingLifecycleState.notActivated,
         );
         registerInMemoryBearing(registered);
         bearing = registered;
-      } else if (BearingEncryptionKeyService.verifyTamperProofChecksum(bearingId)) {
-        final decoded = BearingEncryptionKeyService.decodeKey(bearingId);
-        final modelTok = decoded['model_token'] ?? '6204';
-        final modelNum = 'PBI-$modelTok-ZZ';
-        final autoBearing = BearingModel(
-          id: bearingId,
-          batchCode: 'BATCH-2026-OCT-A',
-          modelNumber: modelNum,
-          plantLocation: 'Plant 02 — Chakan Industrial Complex',
-          warrantyDurationMonths: 6,
-          state: BearingLifecycleState.notActivated,
-        );
-        registerInMemoryBearing(autoBearing);
-        bearing = autoBearing;
-      } else if (BearingEncryptionKeyService.isValidKeyOrId(bearingId) ||
-          BearingEncryptionKeyService.isValidKeyOrId(rawPayload)) {
-        final autoBearing = BearingModel(
-          id: bearingId,
-          batchCode: 'BATCH-2026-OCT-A',
-          modelNumber: 'PBI-6204-ZZ',
-          plantLocation: 'Plant 02 — Chakan Industrial Complex',
-          warrantyDurationMonths: 6,
-          state: BearingLifecycleState.notActivated,
-        );
-        registerInMemoryBearing(autoBearing);
-        bearing = autoBearing;
       } else {
         return QrVerificationResult.invalid(
           id: bearingId,
@@ -376,102 +479,243 @@ class BearingRepositoryImpl implements BearingRepository {
         id = uri.pathSegments.last.split('?').first;
       }
     }
-    return id.toUpperCase().trim();
+    return id.trim();
   }
 
   @override
   Future<BearingModel?> getBearingById(String id) async {
-    final cleanId = _extractBearingId(id);
+    final rawId = id.trim();
+    if (rawId.isEmpty) return null;
+    final cleanId = _extractBearingId(rawId);
+    final upperId = cleanId.toUpperCase();
     final prefs = await SharedPreferences.getInstance();
     final isLocallyOut = prefs.getBool('pbi_bearing_permanently_out_$cleanId') == true ||
+        prefs.getBool('pbi_bearing_permanently_out_$upperId') == true ||
         prefs.getString('pbi_track_state_$cleanId') == 'FINAL_OUT' ||
-        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_OUT';
+        prefs.getString('pbi_track_state_$upperId') == 'FINAL_OUT' ||
+        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_OUT' ||
+        prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_OUT';
 
+    // 1. Authoritative Server RPC: get_bearing_lifecycle_summary
     if (SupabaseService.isInitialized) {
       try {
-        final response = await SupabaseService.client
-            .from('qr_codes')
-            .select('''
-              id,
-              bearing_id,
-              model_number,
-              current_lifecycle_state,
-              first_in_timestamp,
-              last_out_timestamp,
-              warranty_expiry_timestamp,
-              is_flagged,
-              flag_reason,
-              qr_batches (batch_code, plant_location),
-              warranty_plans:assigned_warranty_plan_id (title, duration_months)
-            ''')
-            .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId,payload_value.ilike.$cleanId')
-            .limit(1)
-            .maybeSingle();
+        final rpcRes = await SupabaseService.client.rpc('get_bearing_lifecycle_summary', params: {
+          'p_scanned_payload': rawId,
+        });
+        if (rpcRes != null && rpcRes is Map) {
+          final summary = Map<String, dynamic>.from(rpcRes);
+          if (summary['success'] == true) {
+            final dur = (summary['warranty_duration_months'] as num).toInt();
+            final firstIn = summary['first_in_timestamp'] != null
+                ? DateTime.tryParse(summary['first_in_timestamp'].toString())
+                : null;
+            final lastOut = summary['last_out_timestamp'] != null
+                ? DateTime.tryParse(summary['last_out_timestamp'].toString())
+                : null;
+            DateTime? expiry = summary['warranty_expiry_timestamp'] != null
+                ? DateTime.tryParse(summary['warranty_expiry_timestamp'].toString())
+                : null;
+            if (firstIn != null && expiry == null) {
+              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur);
+            }
+
+            BearingLifecycleState state = BearingLifecycleState.notActivated;
+            final stateStr = summary['current_lifecycle_state']?.toString();
+            if (isLocallyOut || stateStr == 'CURRENTLY_OUT' || stateStr == 'FINAL_OUT' || stateStr == 'DECOMMISSIONED') {
+              state = BearingLifecycleState.currentlyOut;
+            } else if (stateStr == 'CURRENTLY_IN' ||
+                prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+                prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN') {
+              state = BearingLifecycleState.currentlyIn;
+            }
+
+            final resBearing = BearingModel(
+              id: summary['bearing_id']?.toString() ?? cleanId,
+              batchCode: summary['batch_code']?.toString() ?? 'BATCH-ACTIVE',
+              modelNumber: summary['model_number']?.toString() ?? 'B1',
+              customCategory: summary['category']?.toString() ?? 'Ball Bearing',
+              productName: summary['product_name']?.toString() ?? 'Bearing 1(Ball Bearing)',
+              plantLocation: summary['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex',
+              warrantyDurationMonths: dur,
+              state: state,
+              firstInDate: firstIn,
+              lastInDate: firstIn,
+              lastOutDate: lastOut,
+              explicitExpiryDate: expiry,
+            );
+            registerInMemoryBearing(resBearing);
+            return resBearing;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Direct Supabase Query with exact joined warranty plan
+    if (SupabaseService.isInitialized) {
+      try {
+        Map<String, dynamic>? response;
+        try {
+          response = await SupabaseService.client
+              .from('qr_codes')
+              .select('''
+                id,
+                bearing_id,
+                model_number,
+                warranty_duration_months,
+                current_lifecycle_state,
+                first_in_timestamp,
+                last_out_timestamp,
+                warranty_expiry_timestamp,
+                is_flagged,
+                flag_reason,
+                qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                warranty_plans:assigned_warranty_plan_id (title, duration_months)
+              ''')
+              .eq('bearing_id', cleanId)
+              .maybeSingle();
+        } catch (_) {}
+
+        if (response == null) {
+          try {
+            response = await SupabaseService.client
+                .from('qr_codes')
+                .select('''
+                  id,
+                  bearing_id,
+                  model_number,
+                  warranty_duration_months,
+                  current_lifecycle_state,
+                  first_in_timestamp,
+                  last_out_timestamp,
+                  warranty_expiry_timestamp,
+                  is_flagged,
+                  flag_reason,
+                  qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                  warranty_plans:assigned_warranty_plan_id (title, duration_months)
+                ''')
+                .ilike('bearing_id', cleanId)
+                .maybeSingle();
+          } catch (_) {}
+        }
 
         if (response != null) {
           final batch = response['qr_batches'] as Map<String, dynamic>?;
           final plan = response['warranty_plans'] as Map<String, dynamic>?;
+          final batchPlan = batch?['warranty_plans'] as Map<String, dynamic>?;
 
-          BearingLifecycleState state = BearingLifecycleState.notActivated;
-          final dbState = response['current_lifecycle_state']?.toString();
-          if (isLocallyOut || dbState == 'CURRENTLY_OUT' || dbState == 'FINAL_OUT' || dbState == 'DECOMMISSIONED') {
-            state = BearingLifecycleState.currentlyOut;
-          } else if (dbState == 'CURRENTLY_IN' ||
-              prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
-              prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN') {
-            state = BearingLifecycleState.currentlyIn;
-          } else {
-            state = BearingLifecycleState.notActivated;
+          await QrManagementRepository.loadFromLocalStorage();
+          final localQr = QrManagementRepository.findQrRecord(cleanId) ??
+              QrManagementRepository.findQrRecord(rawId);
+          final localDur = (localQr?['duration_months'] as num?)?.toInt();
+
+          final dur = (response['warranty_duration_months'] as num?)?.toInt() ??
+              (plan?['duration_months'] as num?)?.toInt() ??
+              localDur ??
+              (batchPlan?['duration_months'] as num?)?.toInt();
+
+          if (dur != null) {
+            BearingLifecycleState state = BearingLifecycleState.notActivated;
+            final dbState = response['current_lifecycle_state']?.toString();
+            if (isLocallyOut || dbState == 'CURRENTLY_OUT' || dbState == 'FINAL_OUT' || dbState == 'DECOMMISSIONED') {
+              state = BearingLifecycleState.currentlyOut;
+            } else if (dbState == 'CURRENTLY_IN' ||
+                prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+                prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN') {
+              state = BearingLifecycleState.currentlyIn;
+            }
+
+            final firstIn = response['first_in_timestamp'] != null
+                ? DateTime.tryParse(response['first_in_timestamp'].toString())
+                : (prefs.getString('pbi_track_in_time_$cleanId') != null
+                    ? DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId')!)
+                    : null);
+            final lastOut = response['last_out_timestamp'] != null
+                ? DateTime.tryParse(response['last_out_timestamp'].toString())
+                : (prefs.getString('pbi_track_out_time_$cleanId') != null
+                    ? DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId')!)
+                    : null);
+            DateTime? expiry = response['warranty_expiry_timestamp'] != null
+                ? DateTime.tryParse(response['warranty_expiry_timestamp'].toString())
+                : null;
+            if (firstIn != null && expiry == null) {
+              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur);
+            }
+
+            final resBearing = BearingModel(
+              id: response['bearing_id']?.toString() ?? cleanId,
+              batchCode: batch?['batch_code']?.toString() ?? 'BATCH-ACTIVE',
+              modelNumber: response['model_number']?.toString() ?? 'B1',
+              customCategory: 'Ball Bearing',
+              productName: 'Bearing 1(Ball Bearing)',
+              plantLocation: batch?['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex',
+              warrantyDurationMonths: dur,
+              state: state,
+              firstInDate: firstIn,
+              lastInDate: firstIn,
+              lastOutDate: lastOut,
+              explicitExpiryDate: expiry,
+            );
+            registerInMemoryBearing(resBearing);
+            return resBearing;
           }
-
-          final firstIn = response['first_in_timestamp'] != null
-              ? DateTime.tryParse(response['first_in_timestamp'].toString())
-              : (state == BearingLifecycleState.currentlyIn
-                  ? (DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId') ?? '') ?? DateTime.now())
-                  : null);
-
-          final lastOut = response['last_out_timestamp'] != null
-              ? DateTime.tryParse(response['last_out_timestamp'].toString())
-              : (isLocallyOut
-                  ? (DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId') ?? '') ?? DateTime.now())
-                  : null);
-
-          final expiry = response['warranty_expiry_timestamp'] != null
-              ? DateTime.tryParse(response['warranty_expiry_timestamp'].toString())
-              : null;
-
-          int dur = 6;
-          if (plan != null && plan['duration_months'] is num) {
-            dur = (plan['duration_months'] as num).toInt();
-          } else if (firstIn != null && expiry != null) {
-            final diff = (expiry.year - firstIn.year) * 12 + (expiry.month - firstIn.month);
-            if (diff > 0) dur = diff;
-          }
-
-          final resBearing = BearingModel(
-            id: response['bearing_id'],
-            batchCode: batch?['batch_code'] ?? 'BATCH-2026-OCT-A',
-            modelNumber: response['model_number'] ?? 'PBI-6204-ZZ',
-            plantLocation: batch?['plant_location'] ?? 'Plant 02 — Chakan',
-            warrantyDurationMonths: dur,
-            state: state,
-            firstInDate: firstIn,
-            lastInDate: firstIn,
-            lastOutDate: lastOut,
-            explicitExpiryDate: expiry,
-          );
-          registerInMemoryBearing(resBearing);
-          return resBearing;
         }
-      } catch (_) {
-        // Fall back to local store
+      } catch (_) {}
+    }
+
+    // 3. Local Storage Resolution (Deterministic QR registry)
+    await QrManagementRepository.loadFromLocalStorage();
+    final qrRec = QrManagementRepository.findQrRecord(cleanId) ??
+        QrManagementRepository.findQrRecord(rawId);
+    if (qrRec != null) {
+      final dur = (qrRec['duration_months'] as num?)?.toInt();
+      if (dur != null) {
+        final firstIn = qrRec['first_in_timestamp'] != null
+            ? DateTime.tryParse(qrRec['first_in_timestamp'].toString())
+            : (prefs.getString('pbi_track_in_time_$cleanId') != null
+                ? DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId')!)
+                : null);
+        final lastOut = qrRec['last_out_timestamp'] != null
+            ? DateTime.tryParse(qrRec['last_out_timestamp'].toString())
+            : (prefs.getString('pbi_track_out_time_$cleanId') != null
+                ? DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId')!)
+                : null);
+        final expiry = firstIn != null
+            ? WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur)
+            : null;
+
+        BearingLifecycleState state = BearingLifecycleState.notActivated;
+        final dbState = qrRec['current_lifecycle_state']?.toString();
+        if (isLocallyOut || dbState == 'CURRENTLY_OUT' || dbState == 'FINAL_OUT' || dbState == 'DECOMMISSIONED') {
+          state = BearingLifecycleState.currentlyOut;
+        } else if (dbState == 'CURRENTLY_IN' ||
+            prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+            prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN') {
+          state = BearingLifecycleState.currentlyIn;
+        }
+
+        final resolvedBearing = BearingModel(
+          id: qrRec['bearing_id']?.toString() ?? cleanId,
+          batchCode: qrRec['batch_code']?.toString() ?? 'BATCH-ACTIVE',
+          modelNumber: qrRec['model_number']?.toString() ?? 'B1',
+          customCategory: 'Ball Bearing',
+          productName: 'Bearing 1(Ball Bearing)',
+          plantLocation: qrRec['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex',
+          warrantyDurationMonths: dur,
+          state: state,
+          firstInDate: firstIn,
+          lastInDate: firstIn,
+          lastOutDate: lastOut,
+          explicitExpiryDate: expiry,
+        );
+        registerInMemoryBearing(resolvedBearing);
+        return resolvedBearing;
       }
     }
 
+    // 4. In-Memory Store
     final cached = _inMemoryStore[cleanId] ??
-        _inMemoryStore[id.trim()] ??
-        _inMemoryStore[id.trim().toUpperCase()];
-
+        _inMemoryStore[rawId] ??
+        _inMemoryStore[upperId];
     if (cached != null) {
       if (isLocallyOut && cached.state != BearingLifecycleState.currentlyOut) {
         final outDate = DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId') ?? '') ?? DateTime.now();
@@ -479,6 +723,8 @@ class BearingRepositoryImpl implements BearingRepository {
           id: cached.id,
           batchCode: cached.batchCode,
           modelNumber: cached.modelNumber,
+          customCategory: cached.customCategory,
+          productName: cached.productName,
           plantLocation: cached.plantLocation,
           warrantyDurationMonths: cached.warrantyDurationMonths,
           state: BearingLifecycleState.currentlyOut,
@@ -494,66 +740,7 @@ class BearingRepositoryImpl implements BearingRepository {
       return cached;
     }
 
-    await QrManagementRepository.loadFromLocalStorage();
-    final qrRec = QrManagementRepository.findQrRecord(cleanId) ??
-        QrManagementRepository.findQrRecord(id.trim());
-    if (qrRec != null) {
-      final model = qrRec['model_number']?.toString() ?? 'PBI-6204-ZZ';
-      final dur = (qrRec['duration_months'] as num?)?.toInt() ?? 6;
-      final batch = qrRec['batch_code']?.toString() ?? 'BATCH-ACTIVE';
-      final plant = qrRec['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex';
-      final dbState = qrRec['current_lifecycle_state']?.toString();
-
-      BearingLifecycleState state = BearingLifecycleState.notActivated;
-      if (isLocallyOut || dbState == 'CURRENTLY_OUT' || dbState == 'FINAL_OUT' || dbState == 'DECOMMISSIONED') {
-        state = BearingLifecycleState.currentlyOut;
-      } else if (dbState == 'CURRENTLY_IN' ||
-          prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
-          prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN') {
-        state = BearingLifecycleState.currentlyIn;
-      }
-
-      final firstIn = qrRec['first_in_timestamp'] != null
-          ? DateTime.tryParse(qrRec['first_in_timestamp'].toString())
-          : (state == BearingLifecycleState.currentlyIn
-              ? (DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId') ?? '') ?? DateTime.now())
-              : null);
-
-      final lastOut = qrRec['last_out_timestamp'] != null
-          ? DateTime.tryParse(qrRec['last_out_timestamp'].toString())
-          : (isLocallyOut
-              ? (DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId') ?? '') ?? DateTime.now())
-              : null);
-
-      final resolvedBearing = BearingModel(
-        id: qrRec['bearing_id']?.toString() ?? cleanId,
-        batchCode: batch,
-        modelNumber: model,
-        plantLocation: plant,
-        warrantyDurationMonths: dur,
-        state: state,
-        firstInDate: firstIn,
-        lastInDate: firstIn,
-        lastOutDate: lastOut,
-      );
-      registerInMemoryBearing(resolvedBearing);
-      return resolvedBearing;
-    }
-
-    if (BearingEncryptionKeyService.isValidKeyOrId(cleanId) ||
-        BearingEncryptionKeyService.isValidKeyOrId(id.trim())) {
-      final autoBearing = BearingModel(
-        id: cleanId,
-        batchCode: 'BATCH-2026-OCT-A',
-        modelNumber: 'PBI-6204-ZZ',
-        plantLocation: 'Plant 02 — Chakan Industrial Complex',
-        warrantyDurationMonths: 6,
-        state: isLocallyOut ? BearingLifecycleState.currentlyOut : BearingLifecycleState.notActivated,
-      );
-      registerInMemoryBearing(autoBearing);
-    }
-
-    return _inMemoryStore[cleanId];
+    return null;
   }
 
   @override
@@ -576,13 +763,29 @@ class BearingRepositoryImpl implements BearingRepository {
     }
 
     BearingModel? existing = await getBearingById(cleanId);
+
+    final upperId = cleanId.toUpperCase();
+    // ========================================================================
+    // AUTO-MODE ENFORCEMENT:
+    // If bearing is ALREADY currently marked IN, automatically toggle to mark OUT!
+    // No duplicate IN entries can ever exist!
+    // ========================================================================
+    if (existing?.state == BearingLifecycleState.currentlyIn ||
+        prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+        prefs.getString('pbi_track_state_$upperId') == 'IN' ||
+        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN' ||
+        prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_IN') {
+      debugPrint('Bearing $cleanId is ALREADY marked IN. Auto-toggling to mark OUT.');
+      return await markBearingOut(id, proofImageHash: proofImageHash, skipRemoteRpc: skipRemoteRpc);
+    }
     if (existing == null) {
       await QrManagementRepository.loadFromLocalStorage();
-      final qrRec = QrManagementRepository.findQrRecord(cleanId);
-      final model = qrRec?['model_number']?.toString() ?? 'PBI-6204-ZZ';
+      final qrRec = QrManagementRepository.findQrRecord(cleanId) ??
+          QrManagementRepository.findQrRecord(upperId);
+      final model = qrRec?['model_number']?.toString() ?? 'B1';
       final batch = qrRec?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
-      final plant = qrRec?['plant_location']?.toString() ?? 'Plant 02 — Chakan';
-      final dur = (qrRec?['duration_months'] as num?)?.toInt() ?? 6;
+      final plant = qrRec?['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex';
+      final dur = (qrRec?['duration_months'] as num?)?.toInt() ?? 12;
       existing = BearingModel(
         id: cleanId,
         batchCode: batch,
@@ -593,28 +796,39 @@ class BearingRepositoryImpl implements BearingRepository {
       );
     }
 
+    final dur = existing.warrantyDurationMonths;
+    final inTime = existing.firstInDate ?? now;
+    final calculatedExpiry = WarrantyCalculator.calculateExpiryDate(
+      firstInDate: inTime,
+      durationMonths: dur,
+    );
+
     // 1. Authoritative Supabase confirmation with resilient fallback
-    if (!skipRemoteRpc && SupabaseService.isInitialized) {
-      try {
-        await SupabaseService.confirmBearingIn(
-          bearingId: cleanId,
-          notes: notes ?? 'Marked IN via Pivot Bearings App',
-        );
-      } catch (e) {
-        debugPrint('Supabase confirm_bearing_in error, executing direct table sync fallback: $e');
+    if (SupabaseService.isInitialized) {
+      if (!skipRemoteRpc) {
         try {
-          await SupabaseService.client
-              .from('qr_codes')
-              .update({
-                'current_lifecycle_state': 'CURRENTLY_IN',
-                'first_in_timestamp': now.toIso8601String(),
-                'last_in_timestamp': now.toIso8601String(),
-                'assigned_customer_id': AuthController.instance.userId,
-                'updated_at': now.toIso8601String(),
-              })
-              .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
-        } catch (_) {}
+          await SupabaseService.confirmBearingIn(
+            bearingId: cleanId,
+            notes: notes ?? 'Marked IN via Pivot Bearings App',
+          );
+        } catch (e) {
+          debugPrint('Supabase confirm_bearing_in error, executing direct table sync fallback: $e');
+        }
       }
+      try {
+        await SupabaseService.client
+            .from('qr_codes')
+            .update({
+              'current_lifecycle_state': 'CURRENTLY_IN',
+              'first_in_timestamp': inTime.toIso8601String(),
+              'last_in_timestamp': now.toIso8601String(),
+              'warranty_expiry_timestamp': calculatedExpiry.toIso8601String(),
+              'warranty_duration_months': dur,
+              'assigned_customer_id': AuthController.instance.userId,
+              'updated_at': now.toIso8601String(),
+            })
+            .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
+      } catch (_) {}
     }
 
     // 2. Comprehensive SharedPreferences synchronization across all modules
@@ -680,10 +894,10 @@ class BearingRepositoryImpl implements BearingRepository {
     if (existing == null) {
       await QrManagementRepository.loadFromLocalStorage();
       final qrRec = QrManagementRepository.findQrRecord(cleanId);
-      final model = qrRec?['model_number']?.toString() ?? 'PBI-6204-ZZ';
+      final model = qrRec?['model_number']?.toString() ?? 'B1';
       final batch = qrRec?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
-      final plant = qrRec?['plant_location']?.toString() ?? 'Plant 02 — Chakan';
-      final dur = (qrRec?['duration_months'] as num?)?.toInt() ?? 6;
+      final plant = qrRec?['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex';
+      final dur = (qrRec?['duration_months'] as num?)?.toInt() ?? 12;
       existing = BearingModel(
         id: cleanId,
         batchCode: batch,
@@ -713,26 +927,28 @@ class BearingRepositoryImpl implements BearingRepository {
     }
 
     // 3. Authoritative Supabase confirmation with resilient direct table fallback
-    if (!skipRemoteRpc && SupabaseService.isInitialized) {
-      try {
-        await SupabaseService.confirmBearingOut(
-          bearingId: cleanId,
-          notes: 'Marked OUT via Pivot Bearings App',
-        );
-      } catch (e) {
-        debugPrint('Supabase confirm_bearing_out error, executing direct table fallback: $e');
+    if (SupabaseService.isInitialized) {
+      if (!skipRemoteRpc) {
         try {
-          await SupabaseService.client
-              .from('qr_codes')
-              .update({
-                'current_lifecycle_state': 'CURRENTLY_OUT',
-                'last_out_timestamp': now.toIso8601String(),
-                'assigned_customer_id': AuthController.instance.userId,
-                'updated_at': now.toIso8601String(),
-              })
-              .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
-        } catch (_) {}
+          await SupabaseService.confirmBearingOut(
+            bearingId: cleanId,
+            notes: 'Marked OUT via Pivot Bearings App',
+          );
+        } catch (e) {
+          debugPrint('Supabase confirm_bearing_out error, executing direct table fallback: $e');
+        }
       }
+      try {
+        await SupabaseService.client
+            .from('qr_codes')
+            .update({
+              'current_lifecycle_state': 'CURRENTLY_OUT',
+              'last_out_timestamp': now.toIso8601String(),
+              'assigned_customer_id': AuthController.instance.userId,
+              'updated_at': now.toIso8601String(),
+            })
+            .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
+      } catch (_) {}
     }
 
     // 4. Update persistent state across all storage layers

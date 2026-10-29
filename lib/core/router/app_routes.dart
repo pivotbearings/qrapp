@@ -21,6 +21,7 @@ abstract class AppRoutes {
   static const String qrBulkGeneration = '/admin/qr-generation';
   static const String qrInventory = '/admin/qr-inventory';
   static const String warrantyCheck = '/warranty-check';
+  static const String markedOutWarranty = '/marked-out-warranty';
   static const String rewardWallet = '/rewards';
   static const String accessDenied = '/access-denied';
 }

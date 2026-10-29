@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/widgets/industrial_app_bar.dart';
@@ -131,7 +132,8 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
   }
 
   void _openRedeemDialog() {
-    if (!_profile.isRewardEligible) {
+    final auth = AuthController.instance;
+    if (!_profile.isRewardEligible || !auth.isRewardEligible) {
       AppSnackBar.showInfo(
         context,
         'Reward points redemption is currently inactive for this account profile. Please contact support.',
@@ -233,6 +235,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
 
   Widget _buildBalanceHeroCard() {
     final canRedeem = _profile.isRewardEligible &&
+        AuthController.instance.isRewardEligible &&
         _profile.currentBalancePoints >= _profile.minRedemptionPoints;
 
     return Container(

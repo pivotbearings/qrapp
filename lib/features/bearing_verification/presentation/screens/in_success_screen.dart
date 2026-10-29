@@ -46,9 +46,10 @@ class _InSuccessScreenState extends State<InSuccessScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final durationMonths = _bearing?.warrantyDurationMonths ?? 6;
+    final inDate = _bearing?.firstInDate ?? _bearing?.lastInDate ?? now;
+    final durationMonths = _bearing?.warrantyDurationMonths ?? 0;
     final expiry = _bearing?.warrantyExpiryDate ??
-        WarrantyCalculator.calculateExpiryDate(firstInDate: now, durationMonths: durationMonths);
+        (durationMonths > 0 ? WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durationMonths) : now);
 
     return Scaffold(
       backgroundColor: AppColors.background,

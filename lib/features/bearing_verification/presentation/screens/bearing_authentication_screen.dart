@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -11,8 +12,7 @@ import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../data/services/bearing_authentication_service.dart';
 import '../../domain/models/bearing_authentication_result.dart';
-import '../../../rewards/domain/models/reward_models.dart';
-import '../../../rewards/presentation/dialogs/claim_reward_points_dialog.dart';
+import '../../../rewards/data/services/reward_service.dart';
 
 enum AuthenticationViewStep {
   landing,
@@ -223,12 +223,14 @@ class _BearingAuthenticationScreenState
           _currentStep = AuthenticationViewStep.result;
         });
 
-        if (result.isAuthentic &&
+        final auth = AuthController.instance;
+        if (auth.isRewardEligible &&
+            result.isAuthentic &&
             !result.isAlreadyOut &&
             result.rewardClaim?.alreadyClaimed != true &&
             result.rewardClaim?.isUserBlocked != true) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _promptClaimRewardPoints(result.bearingId ?? payload);
+            _claimRewardPointsDirectly(result.bearingId ?? payload);
           });
         }
       }
@@ -1079,6 +1081,7 @@ class _BearingAuthenticationScreenState
   Widget _buildAuthenticResultView(BearingAuthenticationResult result) {
     final isFirst = result.isFirstScan;
     final isSecond = result.isSecondScan;
+    final auth = AuthController.instance;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppDimensions.gutterMobile),
@@ -1180,18 +1183,18 @@ class _BearingAuthenticationScreenState
           else
             _buildThirdPlusScanBanner(result),
 
-          if (result.rewardClaim?.rewardAwarded == true) ...[
-            const SizedBox(height: AppDimensions.spaceSm),
-            _buildRewardClaimCelebrationBanner(result.rewardClaim!),
-          ] else if (result.rewardClaim?.isUserBlocked == true) ...[
-            const SizedBox(height: AppDimensions.spaceSm),
-            _buildRewardBlockedAccountNotice(result.rewardClaim!),
-          ] else if (result.rewardClaim?.alreadyClaimed == true) ...[
-            const SizedBox(height: AppDimensions.spaceSm),
-            _buildRewardAlreadyClaimedNotice(),
-          ] else if (result.isAuthentic && !result.isAlreadyOut) ...[
-            const SizedBox(height: AppDimensions.spaceSm),
-            _buildClaimRewardPointsPrompt(result),
+          // Reward Points Banner: ONLY shown when user's reward toggle is ON (eligible)
+          if (auth.isRewardEligible) ...[
+            if (result.rewardClaim?.rewardAwarded == true) ...[
+              const SizedBox(height: AppDimensions.spaceSm),
+              _buildRewardClaimCelebrationBanner(result.rewardClaim!),
+            ] else if (result.rewardClaim?.alreadyClaimed == true) ...[
+              const SizedBox(height: AppDimensions.spaceSm),
+              _buildRewardAlreadyClaimedNotice(),
+            ] else if (result.isAuthentic && !result.isAlreadyOut) ...[
+              const SizedBox(height: AppDimensions.spaceSm),
+              _buildClaimRewardPointsPrompt(result),
+            ],
           ],
 
           const SizedBox(height: AppDimensions.spaceMd),
@@ -1409,18 +1412,20 @@ class _BearingAuthenticationScreenState
     );
   }
 
-  Future<void> _promptClaimRewardPoints(String bearingId) async {
-    if (!mounted) return;
-    final claim = await ClaimRewardPointsDialog.show(
-      context,
-      bearingId: bearingId,
-      sourceModule: 'AUTHENTICATE_BEARING',
-    );
-    if (claim != null && mounted) {
-      setState(() {
-        _authResult = _authResult?.copyWithReward(claim);
-      });
-    }
+  Future<void> _claimRewardPointsDirectly(String bearingId) async {
+    final auth = AuthController.instance;
+    if (!auth.isRewardEligible) return;
+    try {
+      final claim = await RewardService.claimBearingScanReward(
+        rawPayloadOrId: bearingId,
+        sourceModule: 'AUTHENTICATE_BEARING',
+      );
+      if (claim.rewardAwarded && mounted) {
+        setState(() {
+          _authResult = _authResult?.copyWithReward(claim);
+        });
+      }
+    } catch (_) {}
   }
 
   Widget _buildClaimRewardPointsPrompt(BearingAuthenticationResult result) {
@@ -1457,7 +1462,7 @@ class _BearingAuthenticationScreenState
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Enter supplier details to claim your reward points.',
+                  'Claim your promotional reward points for this authentic bearing.',
                   style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                 ),
               ],
@@ -1472,7 +1477,7 @@ class _BearingAuthenticationScreenState
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               elevation: 0,
             ),
-            onPressed: () => _promptClaimRewardPoints(bearingId),
+            onPressed: () => _claimRewardPointsDirectly(bearingId),
             child: const Text(
               'CLAIM',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
@@ -1578,57 +1583,7 @@ class _BearingAuthenticationScreenState
     );
   }
 
-  Widget _buildRewardBlockedAccountNotice(RewardClaimResult claim) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        border: Border.all(color: AppColors.primary.withAlpha(60), width: 1.2),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(20),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'AUTHENTIC BEARING • STANDARD ACCOUNT',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  claim.message.isNotEmpty
-                      ? claim.message
-                      : 'Bearing verified authentic! Reward points are currently inactive for this account profile. For program details, please contact Pivot Bearings support.',
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontSize: 12,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   /// Invalid Bearing Layout (Red Theme Warning)
   Widget _buildInvalidResultView(BearingAuthenticationResult result) {

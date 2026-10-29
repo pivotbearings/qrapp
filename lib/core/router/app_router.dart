@@ -6,7 +6,6 @@ import '../constants/app_typography.dart';
 import '../../features/admin_dashboard/presentation/screens/admin_dashboard_screen.dart';
 import '../../features/auth/presentation/screens/access_denied_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
-import '../../features/auth/presentation/screens/pending_verification_screen.dart';
 import '../../features/bearing_verification/presentation/screens/bearing_authentication_screen.dart';
 import '../../features/bearing_verification/presentation/screens/bearing_verification_screen.dart';
 import '../../features/bearing_verification/presentation/screens/track_bearing_screen.dart';
@@ -21,6 +20,7 @@ import '../../features/qr_generation/presentation/screens/qr_bulk_generation_scr
 import '../../features/qr_inventory/presentation/screens/qr_inventory_screen.dart';
 import '../../features/qr_scanner/presentation/screens/qr_scanner_screen.dart';
 import '../../features/warranty_check/presentation/screens/warranty_check_screen.dart';
+import '../../features/warranty_check/presentation/screens/marked_out_warranty_screen.dart';
 import '../../features/rewards/presentation/screens/reward_wallet_screen.dart';
 import 'app_routes.dart';
 
@@ -294,6 +294,14 @@ class AppRouter {
             initialBearingId: initialId,
             initialTabIndex: initialTab,
           ),
+        );
+
+      case AppRoutes.markedOutWarranty:
+        if (!auth.isAuthenticated) {
+          return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
+        return MaterialPageRoute(
+          builder: (_) => const MarkedOutWarrantyScreen(),
         );
 
       case AppRoutes.rewardWallet:

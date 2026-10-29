@@ -22,25 +22,20 @@ class RewardService {
   // ===========================================================================
   // 1. ATOMIC 1ST-SCAN REWARD CLAIM (With Mandatory Supplier Details)
   // ===========================================================================
-  /// Invoked whenever a user claims reward points for an authentic bearing QR code.
-  /// Supplier Name and Supplier Contact Number are strictly mandatory.
+  /// Invoked whenever a user claims/receives reward points for an authentic bearing QR code.
+  /// Rewarding points does NOT require supplier info.
   static Future<RewardClaimResult> claimBearingScanReward({
     required String rawPayloadOrId,
     required String sourceModule,
-    required String supplierName,
-    required String supplierContact,
+    String? supplierName,
+    String? supplierContact,
   }) async {
     final clean = rawPayloadOrId.trim();
-    final cleanSuppName = supplierName.trim();
-    final cleanSuppContact = supplierContact.trim();
+    final cleanSuppName = supplierName?.trim();
+    final cleanSuppContact = supplierContact?.trim();
 
     if (clean.isEmpty) {
       return RewardClaimResult.empty(message: 'Invalid code.');
-    }
-    if (cleanSuppName.isEmpty || cleanSuppContact.isEmpty) {
-      return RewardClaimResult.empty(
-        message: 'Supplier Name and Contact Number are mandatory when claiming Reward Points.',
-      );
     }
 
     if (SupabaseService.isInitialized) {
@@ -122,12 +117,24 @@ class RewardService {
   static Future<Map<String, dynamic>> submitRedemptionRequest({
     required int points,
     required String payoutMethod,
+    required String supplierName,
+    required String supplierContact,
     String? upiId,
     String? bankAccountNumber,
     String? bankIfsc,
     String? bankAccountHolderName,
     String? bankName,
   }) async {
+    final cleanSuppName = supplierName.trim();
+    final cleanSuppContact = supplierContact.trim();
+
+    if (cleanSuppName.isEmpty || cleanSuppContact.isEmpty) {
+      return {
+        'success': false,
+        'message': 'Supplier Name and Contact Number are mandatory to redeem points.',
+      };
+    }
+
     if (SupabaseService.isInitialized) {
       try {
         final dynamic res = await SupabaseService.client.rpc(
@@ -140,6 +147,8 @@ class RewardService {
             'p_bank_ifsc': bankIfsc,
             'p_bank_holder_name': bankAccountHolderName,
             'p_bank_name': bankName,
+            'p_supplier_name': cleanSuppName,
+            'p_supplier_contact': cleanSuppContact,
           },
         );
 
@@ -158,6 +167,8 @@ class RewardService {
     return await _localSubmitRedemption(
       points: points,
       payoutMethod: payoutMethod,
+      supplierName: cleanSuppName,
+      supplierContact: cleanSuppContact,
       upiId: upiId,
       bankAccountNumber: bankAccountNumber,
       bankIfsc: bankIfsc,
@@ -527,12 +538,6 @@ class RewardService {
     final cleanName = supplierName?.trim() ?? '';
     final cleanContact = supplierContact?.trim() ?? '';
 
-    if (cleanName.isEmpty || cleanContact.isEmpty) {
-      return RewardClaimResult.empty(
-        message: 'Supplier Name and Contact Number are mandatory when claiming Reward Points.',
-      );
-    }
-
     // Check if user is blocked from receiving rewards
     final isBlocked = prefs.getBool('offline_reward_eligible_$userEmail') == false;
     if (isBlocked) {
@@ -622,6 +627,8 @@ class RewardService {
   static Future<Map<String, dynamic>> _localSubmitRedemption({
     required int points,
     required String payoutMethod,
+    required String supplierName,
+    required String supplierContact,
     String? upiId,
     String? bankAccountNumber,
     String? bankIfsc,
@@ -659,6 +666,8 @@ class RewardService {
       'bank_ifsc': bankIfsc,
       'bank_account_holder_name': bankAccountHolderName,
       'bank_name': bankName,
+      'supplier_name': supplierName,
+      'supplier_contact': supplierContact,
       'status': 'PENDING',
       'created_at': DateTime.now().toIso8601String(),
       'user_email': userEmail,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -18,7 +19,6 @@ import '../../data/services/bearing_track_service.dart';
 import '../../domain/models/bearing_track_result.dart';
 import '../../domain/models/bearing_history_item.dart';
 import '../../../rewards/domain/models/reward_models.dart';
-import '../../../item_master/data/repositories/item_master_repository.dart';
 
 enum TrackViewStep {
   landing,
@@ -65,6 +65,9 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   int _selectedLandingTab = 0; // 0: Track, 1: Product In, 2: Product Out
+  int _productInPage = 0;
+  int _productOutPage = 0;
+  static const int _pageSize = 10;
 
   static const Color _greenPrimary = Color(0xFF0D8A4E);
   static const Color _greenBackground = Color(0xFFE8F5E9);
@@ -77,12 +80,43 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   static const Color _redTextDark = Color(0xFFB71C1C);
 
   final DateFormat _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+  Timer? _liveTicker;
+
+  String _formatLiveOperatingDuration(DateTime? inTimestamp) {
+    if (inTimestamp == null) return '0 Secs';
+    final now = DateTime.now();
+    final inLocal = inTimestamp.toLocal();
+    final totalSec = now.difference(inLocal).inSeconds;
+    if (totalSec < 0) return '0 Secs';
+
+    final days = totalSec ~/ 86400;
+    final hours = (totalSec % 86400) ~/ 3600;
+    final mins = (totalSec % 3600) ~/ 60;
+    final sec = totalSec % 60;
+
+    if (days > 0) {
+      if (hours > 0) {
+        return '$days ${days == 1 ? "Day" : "Days"}, $hours ${hours == 1 ? "Hour" : "Hours"}, $mins ${mins == 1 ? "Min" : "Mins"}';
+      }
+      return '$days ${days == 1 ? "Day" : "Days"}, $mins ${mins == 1 ? "Min" : "Mins"}';
+    } else if (hours > 0) {
+      return '$hours ${hours == 1 ? "Hour" : "Hours"}, $mins ${mins == 1 ? "Min" : "Mins"}, $sec ${sec == 1 ? "Sec" : "Secs"}';
+    } else if (mins > 0) {
+      return '$mins ${mins == 1 ? "Min" : "Mins"}, $sec ${sec == 1 ? "Sec" : "Secs"}';
+    } else {
+      return '$sec ${sec == 1 ? "Sec" : "Secs"}';
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkInitialFraudLock();
+
+    _liveTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
 
     if (widget.initialTabIndex != null && widget.initialTabIndex! >= 0 && widget.initialTabIndex! <= 2) {
       _selectedLandingTab = widget.initialTabIndex!;
@@ -137,6 +171,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 
   @override
   void dispose() {
+    _liveTicker?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _laserAnimController.dispose();
     _scannerController?.dispose();
@@ -724,21 +759,125 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           );
         }
 
+        final totalCount = items.length;
+        final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
+        final safePage = _productInPage.clamp(0, totalPages - 1);
+        final pagedItems = items.skip(safePage * _pageSize).take(_pageSize).toList();
+
         return RefreshIndicator(
           onRefresh: () async {
             setState(() {});
           },
-          child: ListView.separated(
+          child: ListView(
             padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return _buildProductInCard(item);
-            },
+            children: [
+              ...pagedItems.map((item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildProductInCard(item),
+                  )),
+              _buildPaginationControls(
+                currentPage: safePage,
+                totalCount: totalCount,
+                pageSize: _pageSize,
+                itemName: 'Bearings In',
+                onPageChanged: (newPage) => setState(() => _productInPage = newPage),
+              ),
+            ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildPaginationControls({
+    required int currentPage,
+    required int totalCount,
+    required int pageSize,
+    required String itemName,
+    required ValueChanged<int> onPageChanged,
+  }) {
+    if (totalCount <= pageSize) {
+      if (totalCount > 0) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: Center(
+            child: Text(
+              'Showing all $totalCount $itemName',
+              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    final totalPages = (totalCount / pageSize).ceil().clamp(1, 9999);
+    final startIndex = currentPage * pageSize + 1;
+    final endIndex = ((currentPage + 1) * pageSize).clamp(0, totalCount);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary, width: 1.2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Showing $startIndex–$endIndex of $totalCount',
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Previous Page',
+                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                onPressed: (currentPage > 0)
+                    ? () => onPageChanged(currentPage - 1)
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Page ${currentPage + 1} of $totalPages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Next Page',
+                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                onPressed: (currentPage + 1 < totalPages)
+                    ? () => onPageChanged(currentPage + 1)
+                    : null,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -801,11 +940,15 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           ),
           const Divider(color: Colors.black12, height: 20),
           _buildSpecRow('Model / Part Number', item.modelNumber),
-          _buildSpecRow('Batch Code', item.batchCode),
           _buildSpecRow(
             'Bearing In Date & Time',
-            _dateFormat.format(item.inTimestamp),
+            _dateFormat.format(item.inTimestamp.toLocal()),
             isSuccess: true,
+          ),
+          _buildSpecRow(
+            'Operating Duration So Far',
+            _formatLiveOperatingDuration(item.inTimestamp),
+            isHighlighted: true,
           ),
           if (item.notes != null && item.notes!.trim().isNotEmpty)
             _buildSpecRow('Notes', item.notes!.trim()),
@@ -871,18 +1014,30 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           );
         }
 
+        final totalCount = items.length;
+        final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
+        final safePage = _productOutPage.clamp(0, totalPages - 1);
+        final pagedItems = items.skip(safePage * _pageSize).take(_pageSize).toList();
+
         return RefreshIndicator(
           onRefresh: () async {
             setState(() {});
           },
-          child: ListView.separated(
+          child: ListView(
             padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return _buildProductOutCard(item);
-            },
+            children: [
+              ...pagedItems.map((item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildProductOutCard(item),
+                  )),
+              _buildPaginationControls(
+                currentPage: safePage,
+                totalCount: totalCount,
+                pageSize: _pageSize,
+                itemName: 'Bearings Out',
+                onPageChanged: (newPage) => setState(() => _productOutPage = newPage),
+              ),
+            ],
           ),
         );
       },
@@ -890,9 +1045,9 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Widget _buildProductOutCard(BearingHistoryItem item) {
-    final inTimeFormatted = _dateFormat.format(item.inTimestamp);
+    final inTimeFormatted = _dateFormat.format(item.inTimestamp.toLocal());
     final outTimeFormatted = item.outTimestamp != null
-        ? _dateFormat.format(item.outTimestamp!)
+        ? _dateFormat.format(item.outTimestamp!.toLocal())
         : 'Completed';
 
     return Container(
@@ -953,7 +1108,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           ),
           const Divider(color: Colors.black12, height: 20),
           _buildSpecRow('Model / Part Number', item.modelNumber),
-          _buildSpecRow('Batch Code', item.batchCode),
           _buildSpecRow('Bearing In Date & Time', inTimeFormatted),
           _buildSpecRow('Bearing Out Date & Time', outTimeFormatted, isDanger: true),
           _buildSpecRow('Total Usage Duration', item.formattedDuration, isHighlighted: true),
@@ -1707,7 +1861,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   // ---------------------------------------------------------------------------
   Widget _buildBearingInResultView(BearingTrackResult result) {
     final inTimeFormatted = result.inTimestamp != null
-        ? _dateFormat.format(result.inTimestamp!)
+        ? _dateFormat.format(result.inTimestamp!.toLocal())
         : _dateFormat.format(DateTime.now());
 
     return SingleChildScrollView(
@@ -1793,6 +1947,37 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   ),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _greenBorder.withAlpha(120), width: 1.2),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: _greenPrimary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Live Operating Duration: ${_formatLiveOperatingDuration(result.inTimestamp)}',
+                        style: const TextStyle(
+                          color: _greenTextDark,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -1849,8 +2034,12 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
                 _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
-                _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted, isSuccess: true),
+                _buildSpecRow(
+                  'Operating Duration So Far',
+                  _formatLiveOperatingDuration(result.inTimestamp),
+                  isHighlighted: true,
+                ),
                 Builder(
                   builder: (_) {
                     final activeNotes = (result.notes != null && result.notes!.isNotEmpty)
@@ -1940,61 +2129,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 
           const SizedBox(height: AppDimensions.spaceMd),
 
-          // Send via WhatsApp Button
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF25D366),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(50),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              elevation: 2,
-            ),
-            onPressed: () => _shareViaWhatsApp(result),
-            icon: const WhatsAppIcon(size: 22, color: Colors.white),
-            label: Text(
-              'Send via WhatsApp',
-              style: AppTypography.labelMd.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppDimensions.spaceSm),
-
-          // Actions
-          if (result.bearingId != null && result.bearingId!.isNotEmpty) ...[
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(50),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              icon: const Icon(Icons.logout, size: 20, color: Colors.white),
-              label: const Text(
-                'MARK BEARING OUT & SUBMIT',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Colors.white,
-                ),
-              ),
-              onPressed: () {
-                Navigator.pushNamed(
-                  context,
-                  AppRoutes.outConfirmation,
-                  arguments: result.bearingId,
-                );
-              },
-            ),
-            const SizedBox(height: AppDimensions.spaceSm),
-          ],
-
           OutlinedButton(
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primary,
@@ -2027,10 +2161,10 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   // ---------------------------------------------------------------------------
   Widget _buildBearingOutResultView(BearingTrackResult result) {
     final inTimeFormatted = result.inTimestamp != null
-        ? _dateFormat.format(result.inTimestamp!)
+        ? _dateFormat.format(result.inTimestamp!.toLocal())
         : 'N/A';
     final outTimeFormatted = result.outTimestamp != null
-        ? _dateFormat.format(result.outTimestamp!)
+        ? _dateFormat.format(result.outTimestamp!.toLocal())
         : _dateFormat.format(DateTime.now());
 
     return SingleChildScrollView(
@@ -2145,7 +2279,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
                 _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
-                _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted),
                 _buildSpecRow('Bearing Out Date & Time', outTimeFormatted, isDanger: true),
                 _buildSpecRow(
@@ -2411,10 +2544,10 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   // ---------------------------------------------------------------------------
   Widget _buildAlreadyOutView(BearingTrackResult result) {
     final inTimeStr = result.inTimestamp != null
-        ? _dateFormat.format(result.inTimestamp!)
+        ? _dateFormat.format(result.inTimestamp!.toLocal())
         : 'N/A';
     final outTimeStr = result.outTimestamp != null
-        ? _dateFormat.format(result.outTimestamp!)
+        ? _dateFormat.format(result.outTimestamp!.toLocal())
         : 'N/A';
 
     return SingleChildScrollView(
@@ -2509,11 +2642,16 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 const Divider(color: Colors.black12, height: 24),
                 _buildSpecRow('Bearing Serial / QR', result.bearingId ?? 'N/A'),
                 _buildSpecRow('Model / Part Number', result.modelNumber ?? 'PBI-Standard'),
-                _buildSpecRow('Batch Code', result.batchCode ?? 'BATCH-ACTIVE'),
                 if (result.inTimestamp != null)
                   _buildSpecRow('Bearing In', inTimeStr),
                 if (result.outTimestamp != null)
                   _buildSpecRow('Bearing Out', outTimeStr, isDanger: true),
+                if (result.durationSeconds > 0 || (result.inTimestamp != null && result.outTimestamp != null))
+                  _buildSpecRow(
+                    'Total Usage Duration',
+                    result.formattedUsageDuration.replaceAll('You used this bearing for ', '').replaceAll('.', ''),
+                    isHighlighted: true,
+                  ),
               ],
             ),
           ),
@@ -2794,16 +2932,15 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 
   Future<void> _shareViaWhatsApp(BearingTrackResult result) async {
     final inTimeFormatted = result.inTimestamp != null
-        ? _dateFormat.format(result.inTimestamp!)
+        ? _dateFormat.format(result.inTimestamp!.toLocal())
         : 'N/A';
     final outTimeFormatted = result.outTimestamp != null
-        ? _dateFormat.format(result.outTimestamp!)
+        ? _dateFormat.format(result.outTimestamp!.toLocal())
         : _dateFormat.format(DateTime.now());
     final durationClean = result.formattedUsageDuration
         .replaceAll('You used this bearing for ', '')
         .replaceAll('.', '');
 
-    final auth = AuthController.instance;
     final prefs = await SharedPreferences.getInstance();
     final storedNotes = (result.notes != null && result.notes!.trim().isNotEmpty)
         ? result.notes!.trim()
@@ -2813,14 +2950,19 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     final notesLine = (storedNotes.isNotEmpty) ? '\n• *Notes:* $storedNotes' : '';
 
     final isBearingIn = result.action.toUpperCase() == 'BEARING_IN';
+    final resolvedModel = (result.modelNumber != null &&
+            result.modelNumber!.isNotEmpty &&
+            result.modelNumber != 'PBI-Standard' &&
+            result.modelNumber != 'PBI-6204-ZZ')
+        ? result.modelNumber!
+        : 'B1';
     final String message;
     if (isBearingIn) {
       message = '''
 *PIVOT BEARINGS INDIA - BEARING IN NOTIFICATION*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR / Serial:* ${result.bearingId ?? 'N/A'}
-• *Model / Part No:* ${result.modelNumber ?? 'PBI-Standard'}
-• *Batch Code:* ${result.batchCode ?? 'BATCH-ACTIVE'}
+• *Model / Part No:* $resolvedModel
 • *Bearing In (Installed):* $inTimeFormatted
 • *Operating Status:* Active (Cycle #${result.cycleNumber})$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2831,12 +2973,10 @@ Official Authorized Bearing Traceability Ledger
 *PIVOT BEARINGS INDIA - BEARING OUT SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR / Serial:* ${result.bearingId ?? 'N/A'}
-• *Model / Part No:* ${result.modelNumber ?? 'PBI-Standard'}
-• *Batch Code:* ${result.batchCode ?? 'BATCH-ACTIVE'}
+• *Model / Part No:* $resolvedModel
 • *Bearing In (Installed):* $inTimeFormatted
 • *Bearing Out (Removed):* $outTimeFormatted
 • *Total Operating Duration:* $durationClean
-• *Completed Cycle:* Cycle #${result.cycleNumber} Closed
 • *Operating Status:* Decommissioned / Final Out$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Bearing Traceability Ledger

@@ -80,6 +80,14 @@ class ItemMasterRepository {
   /// Initial production catalog
   static List<BearingItemModel> get _defaultBearingCatalog => [
     BearingItemModel(
+      itemCode: 'B1',
+      itemName: 'Bearing 1(Ball Bearing)',
+      category: 'Ball Bearing',
+      defaultWarrantyMonths: 12,
+      description: 'Standard precision industrial ball bearing assembly',
+      createdAt: DateTime(2026, 1, 1),
+    ),
+    BearingItemModel(
       itemCode: 'PBI-6204-ZZ',
       itemName: 'Deep Groove Ball Bearing 6204 (Dual Metal Shielded)',
       category: 'Ball Bearing',

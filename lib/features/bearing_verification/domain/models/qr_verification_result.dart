@@ -32,6 +32,8 @@ class QrVerificationResult {
   final String? batchCode;
   final String? plantLocation;
   final String? modelNumber;
+  final String? category;
+  final String? productName;
   final String? warrantyPlanTitle;
   final int? warrantyDurationMonths;
   final String? currentLifecycleState;
@@ -51,6 +53,8 @@ class QrVerificationResult {
     this.batchCode,
     this.plantLocation,
     this.modelNumber,
+    this.category,
+    this.productName,
     this.warrantyPlanTitle,
     this.warrantyDurationMonths,
     this.currentLifecycleState,
@@ -75,6 +79,8 @@ class QrVerificationResult {
       batchCode: batchCode,
       plantLocation: plantLocation,
       modelNumber: modelNumber,
+      category: category,
+      productName: productName,
       warrantyPlanTitle: warrantyPlanTitle,
       warrantyDurationMonths: warrantyDurationMonths,
       currentLifecycleState: currentLifecycleState,
@@ -150,19 +156,21 @@ class QrVerificationResult {
         bearingId: json['bearing_id']?.toString() ?? json['scanned_id']?.toString(),
         batchCode: json['batch_code']?.toString(),
         plantLocation: json['plant_location']?.toString(),
-        modelNumber: json['model_number']?.toString(),
+        modelNumber: json['model_number']?.toString() ?? json['item_code']?.toString(),
+        category: json['category']?.toString() ?? json['bearing_category']?.toString(),
+        productName: json['item_name']?.toString() ?? json['product_name']?.toString(),
         warrantyPlanTitle: json['warranty_plan_title']?.toString() ?? json['warranty_title']?.toString(),
         warrantyDurationMonths: dur,
         currentLifecycleState: lifecycleState,
         firstInTimestamp: firstIn,
         warrantyExpiryTimestamp: expiry,
-      isExpired: json['is_expired'] == true,
-      flagReason: json['flag_reason']?.toString(),
-      canMarkIn: isCurrentlyOut ? false : (json['can_mark_in'] == true),
-      canMarkOut: isCurrentlyOut ? false : (json['can_mark_out'] == true),
-      payloadHash: json['payload_hash']?.toString(),
-      errorMessage: json['message']?.toString(),
-    );
+        isExpired: json['is_expired'] == true,
+        flagReason: json['flag_reason']?.toString(),
+        canMarkIn: (lifecycleState == null || lifecycleState == 'NOT_ACTIVATED' || lifecycleState == 'CURRENTLY_OUT') && !isCurrentlyOut,
+        canMarkOut: lifecycleState == 'CURRENTLY_IN' && !isCurrentlyOut,
+        payloadHash: json['payload_hash']?.toString(),
+        errorMessage: json['message']?.toString() ?? json['error_code']?.toString(),
+      );
   }
 
   factory QrVerificationResult.networkUnavailable({String? message}) {

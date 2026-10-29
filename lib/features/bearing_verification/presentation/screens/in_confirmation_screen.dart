@@ -8,9 +8,11 @@ import '../../../../core/widgets/industrial_app_bar.dart';
 import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/industrial_card.dart';
 import '../../../../core/widgets/industrial_status_badge.dart';
+import '../../../../core/widgets/app_snack_bar.dart';
 
 import '../../data/models/bearing_model.dart';
 import '../../data/repositories/bearing_repository.dart';
+import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 
 class InConfirmationScreen extends StatefulWidget {
   final String bearingId;
@@ -41,14 +43,43 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
   }
 
   Future<void> _loadBearing() async {
-    final cleanId = widget.bearingId.trim().toUpperCase();
+    await QrManagementRepository.loadFromLocalStorage();
+    final cleanId = widget.bearingId.trim();
+    final upperId = cleanId.toUpperCase();
     final prefs = await SharedPreferences.getInstance();
     final isOutLocally = prefs.getBool('pbi_bearing_permanently_out_$cleanId') == true ||
+        prefs.getBool('pbi_bearing_permanently_out_$upperId') == true ||
         prefs.getString('pbi_track_state_$cleanId') == 'FINAL_OUT' ||
-        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_OUT';
+        prefs.getString('pbi_track_state_$upperId') == 'FINAL_OUT' ||
+        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_OUT' ||
+        prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_OUT';
 
-    final b = await BearingRepositoryImpl().getBearingById(cleanId);
+    final isCurrentlyInLocally = prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+        prefs.getString('pbi_track_state_$upperId') == 'IN' ||
+        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN' ||
+        prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_IN';
+
+    final b = await BearingRepositoryImpl().getBearingById(cleanId) ??
+        await BearingRepositoryImpl().getBearingById(upperId);
     final isOut = isOutLocally || b?.state == BearingLifecycleState.currentlyOut;
+    final isIn = isCurrentlyInLocally || b?.state == BearingLifecycleState.currentlyIn;
+
+    // AUTO-MODE ENFORCEMENT: No duplicate IN allowed!
+    // If bearing is already marked IN, auto-route to Mark Bearing OUT
+    if (isIn && !isOut) {
+      if (mounted) {
+        AppSnackBar.showSuccess(
+          context,
+          'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
+        );
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.outConfirmation,
+          arguments: widget.bearingId,
+        );
+        return;
+      }
+    }
 
     if (mounted) {
       setState(() {
@@ -60,7 +91,36 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
   }
 
   void _confirmAndStartWarranty() async {
-    if (_isPermanentlyOut) return;
+    if (_isPermanentlyOut) {
+      AppSnackBar.showError(
+        context,
+        'Bearing has already been marked OUT. Re-installation is strictly prohibited.',
+      );
+      return;
+    }
+    final cleanId = widget.bearingId.trim();
+    final upperId = cleanId.toUpperCase();
+    final prefs = await SharedPreferences.getInstance();
+    final isCurrentlyIn = _bearing?.state == BearingLifecycleState.currentlyIn ||
+        prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+        prefs.getString('pbi_track_state_$upperId') == 'IN' ||
+        prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN' ||
+        prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_IN';
+
+    if (isCurrentlyIn) {
+      if (mounted) {
+        AppSnackBar.showSuccess(
+          context,
+          'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
+        );
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.outConfirmation,
+          arguments: widget.bearingId,
+        );
+      }
+      return;
+    }
     final notes = _notesController.text.trim();
     if (notes.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
@@ -180,9 +240,7 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
                           const Divider(color: Colors.black12, height: 20),
                           _buildSpecRow('Bearing Serial', widget.bearingId),
                           const SizedBox(height: 8),
-                          _buildSpecRow('Model / Type', _bearing?.modelNumber ?? 'PBI-6204-ZZ'),
-                          const SizedBox(height: 8),
-                          _buildSpecRow('Batch Code', _bearing?.batchCode ?? 'BATCH-ACTIVE'),
+                          _buildSpecRow('Model / Type', _bearing?.modelNumber ?? 'B1'),
                           const SizedBox(height: 8),
                           _buildSpecRow('Status', 'DECOMMISSIONED', isDanger: true),
                         ],
@@ -223,8 +281,8 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
       );
     }
 
-    final durationMonths = _bearing?.warrantyDurationMonths ?? 6;
-    final modelName = _bearing?.modelNumber ?? 'Standard Industrial Bearing';
+    final durationMonths = _bearing?.warrantyDurationMonths ?? 0;
+    final modelName = _bearing?.modelNumber ?? 'B1';
 
     return Scaffold(
       backgroundColor: AppColors.background,

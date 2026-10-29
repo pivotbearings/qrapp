@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -12,7 +13,7 @@ import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../bearing_verification/data/models/bearing_model.dart';
 import '../../../bearing_verification/data/repositories/bearing_repository.dart';
-import '../../../rewards/domain/models/reward_models.dart';
+import '../../../bearing_verification/data/services/bearing_track_service.dart';
 import '../../../rewards/data/services/reward_service.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
@@ -27,10 +28,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   final BearingRepository _bearingRepo = BearingRepositoryImpl();
   int _inCount = 0;
   int _outCount = 0;
-  int _activeCount = 0;
   int _underWarrantyCount = 0;
   int _expiringSoonCount = 0;
   int _expiredWarrantyCount = 0;
+  int _markedOutUnderWarrantyCount = 0;
   bool _isNavigating = false;
   RewardProfile _rewardProfile = RewardProfile.defaultProfile();
   AdBannerConfig _adConfig = AdBannerConfig.defaultConfig();
@@ -127,14 +128,20 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       customerEmail: profile['email']?.toString() ?? auth.userEmail,
       facilityCode: profile['facility_code']?.toString(),
     );
+
+    final inHistory = await BearingTrackService.fetchTrackInHistory();
+    final outHistory = await BearingTrackService.fetchTrackOutHistory();
+    final inFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyIn).length;
+    final outFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyOut).length;
+
     if (mounted) {
       setState(() {
-        _inCount = bearings.where((b) => b.state == BearingLifecycleState.currentlyIn).length;
-        _outCount = bearings.where((b) => b.state == BearingLifecycleState.currentlyOut).length;
+        _inCount = math.max(inHistory.length, inFromBearings);
+        _outCount = math.max(outHistory.length, outFromBearings);
         _underWarrantyCount = bearings.where((b) => b.isUnderWarranty).length;
         _expiringSoonCount = bearings.where((b) => b.isExpiringSoon).length;
         _expiredWarrantyCount = bearings.where((b) => b.isWarrantyExpired).length;
-        _activeCount = _underWarrantyCount;
+        _markedOutUnderWarrantyCount = bearings.where((b) => b.isMarkedOutUnderWarranty).length;
       });
     }
 
@@ -343,7 +350,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
                         // --- BOTTOM SECTION (Anchored at the bottom above navigation bar) ---
                         // Requirement 2: If admin disables Reward Points, hide Reward Points Wallet
-                        if (_rewardProfile.isEnabled && _rewardProfile.isRewardEligible) ...[
+                        if (auth.hasRewardPointsAccess && _rewardProfile.isEnabled && _rewardProfile.isRewardEligible) ...[
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -767,8 +774,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 subtitle: 'Currently tracked in',
                 count: '$_inCount',
                 icon: Icons.login_rounded,
-                accentColor: const Color(0xFF0D8A4E),
-                bgColor: const Color(0xFFE8F5E9),
                 onTap: () => _safeNavigate(AppRoutes.trackBearing, arguments: 1),
               ),
             ),
@@ -779,8 +784,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 subtitle: 'Tracked out bearings',
                 count: '$_outCount',
                 icon: Icons.logout_rounded,
-                accentColor: const Color(0xFFD32F2F),
-                bgColor: const Color(0xFFFFEBEE),
                 onTap: () => _safeNavigate(AppRoutes.trackBearing, arguments: 2),
               ),
             ),
@@ -795,22 +798,20 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     required String subtitle,
     required String count,
     required IconData icon,
-    required Color accentColor,
-    required Color bgColor,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: accentColor.withValues(alpha: 0.6), width: 1.5),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.25), width: 1.4),
           boxShadow: [
             BoxShadow(
-              color: accentColor.withValues(alpha: 0.08),
+              color: AppColors.primary.withValues(alpha: 0.05),
               blurRadius: 8,
               offset: const Offset(0, 3),
             ),
@@ -825,17 +826,17 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: bgColor,
+                    color: AppColors.primary.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: accentColor, size: 18),
+                  child: Icon(icon, color: AppColors.primary, size: 18),
                 ),
                 Text(
                   count,
                   style: AppTypography.headlineMd.copyWith(
                     fontWeight: FontWeight.w900,
                     fontSize: 22,
-                    color: accentColor,
+                    color: AppColors.primary,
                   ),
                 ),
               ],
@@ -845,8 +846,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               title,
               style: AppTypography.labelMd.copyWith(
                 fontWeight: FontWeight.w900,
-                letterSpacing: 0.8,
+                letterSpacing: 0.5,
                 fontSize: 13,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 3),
@@ -881,8 +883,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 subtitle: 'Active coverage',
                 count: '$_underWarrantyCount',
                 icon: Icons.shield_rounded,
-                accentColor: const Color(0xFF16A34A),
-                bgColor: const Color(0xFFDCFCE7),
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 1).then((_) => _loadDashboardData()),
               ),
             ),
@@ -893,8 +893,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 subtitle: 'Near expiry (≤20%)',
                 count: '$_expiringSoonCount',
                 icon: Icons.timer_outlined,
-                accentColor: const Color(0xFFD97706),
-                bgColor: const Color(0xFFFEF3C7),
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 2).then((_) => _loadDashboardData()),
               ),
             ),
@@ -904,13 +902,71 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 title: 'Warranty Expired',
                 subtitle: 'Coverage ended',
                 count: '$_expiredWarrantyCount',
-                icon: Icons.cancel_outlined,
-                accentColor: const Color(0xFFDC2626),
-                bgColor: const Color(0xFFFEE2E2),
+                icon: Icons.history_rounded,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 3).then((_) => _loadDashboardData()),
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 10),
+        // Dedicated Section: Marked Out Bearings Under Warranty (Claim Warranty Available)
+        InkWell(
+          onTap: () => Navigator.pushNamed(context, AppRoutes.markedOutWarranty).then((_) => _loadDashboardData()),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.15), width: 1.2),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.assignment_turned_in_rounded, size: 20, color: AppColors.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Marked Out Under Warranty',
+                            style: AppTypography.labelMd.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF25D366),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text(
+                              'CLAIM',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$_markedOutUnderWarrantyCount bearings removed before expiry (Supplier Claim Ready)',
+                        style: AppTypography.caption.copyWith(color: Colors.black54, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
+              ],
+            ),
+          ),
         ),
       ],
     );
@@ -921,8 +977,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     required String subtitle,
     required String count,
     required IconData icon,
-    required Color accentColor,
-    required Color bgColor,
     required VoidCallback onTap,
   }) {
     return InkWell(
@@ -931,12 +985,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.background,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: accentColor.withValues(alpha: 0.6), width: 1.4),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.25), width: 1.4),
           boxShadow: [
             BoxShadow(
-              color: accentColor.withValues(alpha: 0.06),
+              color: AppColors.primary.withValues(alpha: 0.05),
               blurRadius: 8,
               offset: const Offset(0, 3),
             ),
@@ -946,12 +1000,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: bgColor,
+                color: AppColors.primary.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: accentColor, size: 16),
+              child: Icon(icon, color: AppColors.primary, size: 16),
             ),
             const SizedBox(height: 6),
             Text(
@@ -959,27 +1013,27 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               style: AppTypography.headlineMd.copyWith(
                 fontWeight: FontWeight.w900,
                 fontSize: 19,
-                color: accentColor,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 9.5,
+              style: AppTypography.labelMd.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+                fontSize: 10.5,
                 color: AppColors.primary,
-                letterSpacing: 0.2,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               subtitle,
-              style: const TextStyle(
-                fontSize: 8.5,
+              style: AppTypography.caption.copyWith(
+                fontSize: 9.5,
                 color: Colors.black54,
               ),
               textAlign: TextAlign.center,
@@ -988,34 +1042,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildMetricTile({required String count, required String label}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 8.0),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary, width: 1.5),
-      ),
-      child: Column(
-        children: [
-          Text(count, style: AppTypography.headlineMd.copyWith(fontWeight: FontWeight.bold, fontSize: 20)),
-          const SizedBox(height: 4.0),
-          Text(
-            label.toUpperCase(),
-            style: AppTypography.caption.copyWith(
-              letterSpacing: 0.2,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
       ),
     );
   }

@@ -163,6 +163,8 @@ class RewardRedemption {
   final String? userEmail;
   final String? userName;
   final String? userPhone;
+  final String? supplierName;
+  final String? supplierContact;
 
   const RewardRedemption({
     required this.id,
@@ -185,6 +187,8 @@ class RewardRedemption {
     this.userEmail,
     this.userName,
     this.userPhone,
+    this.supplierName,
+    this.supplierContact,
   });
 
   bool get isPending => status == 'PENDING' || status == 'PROCESSING';
@@ -213,6 +217,8 @@ class RewardRedemption {
       userEmail: json['user_email']?.toString(),
       userName: json['user_name']?.toString(),
       userPhone: json['user_phone']?.toString(),
+      supplierName: json['supplier_name']?.toString(),
+      supplierContact: json['supplier_contact']?.toString(),
     );
   }
 }

@@ -4,9 +4,10 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../domain/models/bearing_authentication_result.dart';
 import '../../../qr_generation/domain/services/bearing_encryption_key_service.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
+import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 
 import '../../../rewards/data/services/reward_service.dart';
-import '../../../rewards/domain/models/reward_models.dart';
 
 /// Pivot Bearings India - Authoritative Bearing Authentication Service
 ///
@@ -36,6 +37,10 @@ class BearingAuthenticationService {
   /// Primary Authentication Pipeline
   static Future<BearingAuthenticationResult> authenticateBearing(String rawPayload) async {
     final res = await _authenticateBearingInternal(rawPayload);
+    // If user's reward toggle is OFF (blocked), do not attach reward eligibility
+    if (!AuthController.instance.isRewardEligible) {
+      return res;
+    }
     if (res.isAuthentic && !res.isAlreadyOut) {
       try {
         final isClaimed = await RewardService.isBearingRewardClaimed(rawPayload);
@@ -101,24 +106,50 @@ class BearingAuthenticationService {
 
       // 2. Direct Supabase Query Fallback (if RPC migration is pending)
       try {
-        final row = await SupabaseService.client
-            .from('qr_codes')
-            .select('''
-              id,
-              bearing_id,
-              model_number,
-              current_lifecycle_state,
-              first_in_timestamp,
-              warranty_expiry_timestamp,
-              is_flagged,
-              flag_reason,
-              scan_count,
-              first_scanned_at,
-              qr_batches (batch_code, plant_location),
-              warranty_plans:assigned_warranty_plan_id (title, duration_months)
-            ''')
-            .or('bearing_id.eq.$bearingId,payload_value.eq.$cleanPayload')
-            .maybeSingle();
+        Map<String, dynamic>? row;
+        try {
+          row = await SupabaseService.client
+              .from('qr_codes')
+              .select('''
+                id,
+                bearing_id,
+                model_number,
+                current_lifecycle_state,
+                first_in_timestamp,
+                warranty_expiry_timestamp,
+                is_flagged,
+                flag_reason,
+                scan_count,
+                first_scanned_at,
+                qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                warranty_plans:assigned_warranty_plan_id (title, duration_months)
+              ''')
+              .eq('bearing_id', bearingId)
+              .maybeSingle();
+        } catch (_) {}
+
+        if (row == null) {
+          try {
+            row = await SupabaseService.client
+                .from('qr_codes')
+                .select('''
+                  id,
+                  bearing_id,
+                  model_number,
+                  current_lifecycle_state,
+                  first_in_timestamp,
+                  warranty_expiry_timestamp,
+                  is_flagged,
+                  flag_reason,
+                  scan_count,
+                  first_scanned_at,
+                  qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
+                  warranty_plans:assigned_warranty_plan_id (title, duration_months)
+                ''')
+                .eq('payload_value', cleanPayload)
+                .maybeSingle();
+          } catch (_) {}
+        }
 
         if (row != null) {
           final qrId = row['id']?.toString();
@@ -199,17 +230,24 @@ class BearingAuthenticationService {
 
           final batch = row['qr_batches'] as Map<String, dynamic>?;
           final plan = row['warranty_plans'] as Map<String, dynamic>?;
-          final dur = (plan?['duration_months'] as num?)?.toInt() ?? 6;
+          final batchPlan = batch?['warranty_plans'] as Map<String, dynamic>?;
+          final modelNum = row['model_number']?.toString() ?? 'B1';
+          final item = ItemMasterRepository().findByCode(modelNum);
+          final dur = (plan?['duration_months'] as num?)?.toInt() ??
+              (batchPlan?['duration_months'] as num?)?.toInt() ??
+              item?.defaultWarrantyMonths ?? 12;
 
           return BearingAuthenticationResult(
             isAuthentic: true,
             previousScanCount: prevScanCount,
             totalScanCount: totalScans,
             bearingId: row['bearing_id']?.toString() ?? bearingId,
-            modelNumber: row['model_number']?.toString() ?? 'PBI-6204-ZZ',
+            modelNumber: modelNum,
             batchCode: batch?['batch_code']?.toString() ?? 'BATCH-ACTIVE',
             plantLocation: batch?['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex',
-            warrantyPlanTitle: plan?['title']?.toString() ?? '$dur Months Warranty',
+            warrantyPlanTitle: plan?['title']?.toString() ??
+                batchPlan?['title']?.toString() ??
+                '$dur Months Industrial Warranty',
             warrantyDurationMonths: dur,
             currentLifecycleState: lifecycleState,
             firstScannedAt: row['first_scanned_at'] != null
@@ -357,12 +395,18 @@ class BearingAuthenticationService {
       await prefs.setString(firstScanKey, firstScannedAt.toIso8601String());
     }
 
+    // Check in-memory / locally stored QR records first
+    final cachedQr = QrManagementRepository.findQrRecord(bearingId) ??
+        QrManagementRepository.findQrRecord(cleanPayload);
+    final defaultItem = ItemMasterRepository().findByCode('B1') ??
+        (ItemMasterRepository().getAllItems().isNotEmpty ? ItemMasterRepository().getAllItems().first : null);
+
     // Metadata extraction
-    String model = 'PBI-6204-ZZ';
-    String batch = 'BATCH-2026-OCT-A';
-    String plant = 'Plant 02 — Chakan Industrial Complex';
-    String warrantyTitle = 'Standard Factory Warranty';
-    int durationMonths = 6;
+    String model = cachedQr?['model_number']?.toString() ?? defaultItem?.itemCode ?? 'B1';
+    String batch = cachedQr?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
+    String plant = cachedQr?['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex';
+    int durationMonths = (cachedQr?['duration_months'] as num?)?.toInt() ?? defaultItem?.defaultWarrantyMonths ?? 12;
+    String warrantyTitle = cachedQr?['warranty_title']?.toString() ?? '$durationMonths Months Industrial Warranty';
 
     if (isKnownSeed) {
       final info = knownRegisteredIds[bearingId]!;
@@ -371,6 +415,8 @@ class BearingAuthenticationService {
       plant = info['plant'] as String;
       warrantyTitle = info['warranty'] as String;
       durationMonths = info['duration'] as int;
+    } else if (cachedQr != null) {
+      // Use exact values from generated QR manifest
     } else if (isGenuineKey) {
       final decoded = BearingEncryptionKeyService.decodeKey(bearingId);
       final modelTok = decoded['model_token'] ?? '6204';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -16,6 +17,7 @@ import '../../../bearing_verification/domain/models/qr_verification_result.dart'
 import '../../../bearing_verification/presentation/widgets/bearing_out_email_dialog.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/services/anti_fraud_service.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
 
 class WarrantyCheckScreen extends StatefulWidget {
   final String? initialBearingId;
@@ -41,9 +43,44 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
   bool _isLoading = true;
   String? _errorMessage;
 
-  // 0: ALL, 1: UNDER WARRANTY, 2: EXPIRING SOON (20% horizon), 3: EXPIRED
+  // 0: ALL, 1: UNDER WARRANTY, 2: EXPIRING SOON (20% horizon), 3: EXPIRED, 4: MARKED OUT (UNDER WARRANTY)
   int _activeFilterTab = 0;
   bool _isCheckingSpecific = false;
+
+  void _shareMarkedOutWarrantyOnWhatsApp(BearingModel item) {
+    final itemMaster = ItemMasterRepository().findByCode(item.modelNumber);
+    final pName = item.productName ?? itemMaster?.itemName ?? 'Bearing 1(Ball Bearing)';
+    final mNumber = (item.modelNumber.isNotEmpty && item.modelNumber != 'PBI-6204-ZZ')
+        ? item.modelNumber
+        : (itemMaster?.itemCode ?? 'B1');
+    final inStr = item.firstInDate != null ? _dateFormat.format(item.firstInDate!) : 'N/A';
+    final outStr = item.lastOutDate != null ? _dateFormat.format(item.lastOutDate!) : _dateFormat.format(DateTime.now());
+    final expStr = item.warrantyExpiryDate != null ? _dateFormat.format(item.warrantyExpiryDate!) : 'N/A';
+    final daysLeft = item.daysLeftToExpiry ?? 0;
+    final durStr = _calculateLifecycleDuration(item);
+
+    final msg = '''*PIVOT BEARINGS INDIA - WARRANTY CLAIM NOTICE*
+━━━━━━━━━━━━━━━━━━━━━━━━━
+• *Bearing QR Serial:* ${item.id}
+• *Model / Part No:* $mNumber
+• *Product Name:* $pName
+• *Current State:* Marked OUT (Decommissioned)
+• *Warranty Status:* ACTIVE UNDER WARRANTY
+• *Days Remaining:* $daysLeft Days Left
+• *Bearing In (Installed):* $inStr
+• *Bearing Out (Removed):* $outStr
+• *Operating Duration:* $durStr
+• *Warranty Expiry Date:* $expStr
+━━━━━━━━━━━━━━━━━━━━━━━━━
+*Claim Note:* Product was decommissioned prior to warranty expiry. Submitting official claim request with supplier as per warranty terms.
+Pivot Bearings Authorized Traceability Ledger''';
+
+    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}');
+    launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) {
+      if (mounted) AppSnackBar.showError(context, 'Could not launch WhatsApp.');
+      return false;
+    });
+  }
 
   void _shareExpiredWarrantyOnWhatsApp(BearingModel item) {
     final inStr = item.firstInDate != null ? _dateFormat.format(item.firstInDate!) : 'N/A';
@@ -55,7 +92,6 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
 --------------------------------
 *Bearing ID:* ${item.id}
 *Model:* ${item.modelNumber}
-*Batch:* ${item.batchCode}
 *Category:* ${item.category}
 *Status:* WARRANTY EXPIRED
 *Warranty Start / In Date:* $inStr
@@ -69,6 +105,7 @@ Pivot Bearings India''';
     final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}');
     launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) {
       if (mounted) AppSnackBar.showError(context, 'Could not launch WhatsApp.');
+      return false;
     });
   }
 
@@ -149,16 +186,66 @@ Pivot Bearings India''';
     }
   }
 
-  Future<void> _checkSpecificBearing(String input) async {
-    final clean = input.trim().toUpperCase();
+  Future<void> _checkSpecificBearing(String input, {bool fromScan = false}) async {
+    final clean = input.trim();
     if (clean.isEmpty) return;
+    final cleanUpper = clean.toUpperCase();
+    final cleanFuzzy = cleanUpper.replaceAll('L', 'I').replaceAll('1', 'I');
+    final prefs = await SharedPreferences.getInstance();
+
+    final isLocallyOut = prefs.getBool('pbi_bearing_permanently_out_$clean') == true ||
+        prefs.getBool('pbi_bearing_permanently_out_$cleanUpper') == true ||
+        prefs.getString('pbi_track_state_$clean') == 'FINAL_OUT' ||
+        prefs.getString('pbi_track_state_$cleanUpper') == 'FINAL_OUT' ||
+        prefs.getString('pbi_bearing_state_$clean') == 'CURRENTLY_OUT' ||
+        prefs.getString('pbi_bearing_state_$cleanUpper') == 'CURRENTLY_OUT';
+
+    final isLocallyIn = prefs.getString('pbi_track_state_$clean') == 'IN' ||
+        prefs.getString('pbi_track_state_$cleanUpper') == 'IN' ||
+        prefs.getString('pbi_bearing_state_$clean') == 'CURRENTLY_IN' ||
+        prefs.getString('pbi_bearing_state_$cleanUpper') == 'CURRENTLY_IN';
 
     // 0ms instant display if already in loaded list
     final existing = _allBearings.cast<BearingModel?>().firstWhere(
-      (b) => b?.id == clean,
+      (b) {
+        if (b == null) return false;
+        final bId = b.id.trim();
+        final bUpper = bId.toUpperCase();
+        final bFuzzy = bUpper.replaceAll('L', 'I').replaceAll('1', 'I');
+        return bId == clean || bUpper == cleanUpper || bFuzzy == cleanFuzzy;
+      },
       orElse: () => null,
     );
     if (existing != null) {
+      if (fromScan) {
+        if (!mounted) return;
+        if (isLocallyOut || existing.state == BearingLifecycleState.currentlyOut) {
+          AppSnackBar.showError(
+            context,
+            'Bearing has already been marked OUT and is permanently decommissioned.',
+          );
+          _showWarrantyDiagnosticModal(existing, null);
+          return;
+        } else if (isLocallyIn || existing.state == BearingLifecycleState.currentlyIn) {
+          AppSnackBar.showSuccess(
+            context,
+            'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
+          );
+          Navigator.pushNamed(
+            context,
+            AppRoutes.outConfirmation,
+            arguments: existing.id,
+          ).then((_) => _loadUserBearings());
+          return;
+        } else {
+          Navigator.pushNamed(
+            context,
+            AppRoutes.inConfirmation,
+            arguments: existing.id,
+          ).then((_) => _loadUserBearings());
+          return;
+        }
+      }
       _showWarrantyDiagnosticModal(existing, null);
       return;
     }
@@ -187,11 +274,13 @@ Pivot Bearings India''';
 
         final b = model ??
             BearingModel(
-              id: clean,
-              batchCode: verifResult.batchCode ?? 'UNKNOWN',
-              modelNumber: verifResult.modelNumber ?? 'PBI-MODEL',
-              plantLocation: verifResult.plantLocation ?? 'Plant 02 — Chakan',
-              warrantyDurationMonths: verifResult.warrantyDurationMonths ?? 6,
+              id: verifResult.bearingId ?? clean,
+              batchCode: verifResult.batchCode ?? 'BATCH-ACTIVE',
+              modelNumber: verifResult.modelNumber ?? 'B1',
+              customCategory: verifResult.category,
+              productName: verifResult.productName,
+              plantLocation: verifResult.plantLocation ?? 'Plant 02 — Chakan Industrial Complex',
+              warrantyDurationMonths: verifResult.warrantyDurationMonths ?? 12,
               state: verifResult.currentLifecycleState == 'CURRENTLY_IN'
                   ? BearingLifecycleState.currentlyIn
                   : (verifResult.currentLifecycleState == 'CURRENTLY_OUT'
@@ -204,6 +293,47 @@ Pivot Bearings India''';
         setState(() {
           _isCheckingSpecific = false;
         });
+
+        if (fromScan) {
+          if (!mounted) return;
+          final isOut = isLocallyOut ||
+              b.state == BearingLifecycleState.currentlyOut ||
+              verifResult.currentLifecycleState == 'CURRENTLY_OUT' ||
+              verifResult.currentLifecycleState == 'DECOMMISSIONED' ||
+              verifResult.status == QrVerificationStatus.decommissionedOut;
+
+          final isIn = (isLocallyIn ||
+              b.state == BearingLifecycleState.currentlyIn ||
+              verifResult.currentLifecycleState == 'CURRENTLY_IN' ||
+              verifResult.canMarkOut) && !isOut;
+
+          if (isOut) {
+            AppSnackBar.showError(
+              context,
+              'Bearing has already been marked OUT and is permanently decommissioned.',
+            );
+            _showWarrantyDiagnosticModal(b, verifResult);
+            return;
+          } else if (isIn) {
+            AppSnackBar.showSuccess(
+              context,
+              'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
+            );
+            Navigator.pushNamed(
+              context,
+              AppRoutes.outConfirmation,
+              arguments: b.id,
+            ).then((_) => _loadUserBearings());
+            return;
+          } else if (verifResult.canMarkIn || b.state == BearingLifecycleState.notActivated) {
+            Navigator.pushNamed(
+              context,
+              AppRoutes.inConfirmation,
+              arguments: b.id,
+            ).then((_) => _loadUserBearings());
+            return;
+          }
+        }
 
         _showWarrantyDiagnosticModal(b, verifResult);
       }
@@ -238,7 +368,7 @@ Pivot Bearings India''';
         onCodeScanned: (scannedCode) {
           Navigator.pop(ctx);
           _inputBearingCtrl.text = scannedCode;
-          _checkSpecificBearing(scannedCode);
+          _checkSpecificBearing(scannedCode, fromScan: true);
         },
       ),
     );
@@ -257,6 +387,9 @@ Pivot Bearings India''';
       } else if (_activeFilterTab == 3) {
         // Expired
         if (!b.isWarrantyExpired) return false;
+      } else if (_activeFilterTab == 4) {
+        // Marked Out Under Warranty (Claimable with supplier)
+        if (!b.isMarkedOutUnderWarranty) return false;
       }
 
       // Search Query
@@ -283,6 +416,7 @@ Pivot Bearings India''';
     final underWarrantyCount = _allBearings.where((b) => b.isUnderWarranty).length;
     final expiringSoonCount = _allBearings.where((b) => b.isExpiringSoon).length;
     final expiredCount = _allBearings.where((b) => b.isWarrantyExpired).length;
+    final markedOutWarrantyCount = _allBearings.where((b) => b.isMarkedOutUnderWarranty).length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -587,9 +721,55 @@ Pivot Bearings India''';
                       _buildPillTab(index: 2, label: 'EXPIRING SOON ($expiringSoonCount)'),
                       const SizedBox(width: 8),
                       _buildPillTab(index: 3, label: 'EXPIRED ($expiredCount)'),
+                      const SizedBox(width: 8),
+                      _buildPillTab(index: 4, label: 'MARKED OUT ($markedOutWarrantyCount)'),
                     ],
                   ),
                 ),
+                if (markedOutWarrantyCount > 0) ...[
+                  const SizedBox(height: 10),
+                  InkWell(
+                    onTap: () => Navigator.pushNamed(context, AppRoutes.markedOutWarranty).then((_) => _loadUserBearings()),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF22C55E).withValues(alpha: 0.4), width: 1.2),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF25D366),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const WhatsAppIcon(size: 14),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Bearings Marked Out Prior to Expiry',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Color(0xFF166534)),
+                                ),
+                                Text(
+                                  '$markedOutWarrantyCount items remain under active supplier warranty coverage.',
+                                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF15803D)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Color(0xFF166534)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
 
                 // Search Bar
@@ -733,6 +913,10 @@ Pivot Bearings India''';
       badgeBg = AppColors.primary.withValues(alpha: 0.1);
       badgeText = AppColors.primary;
       daysLabel = 'PENDING ACTIVATION';
+    } else if (item.isMarkedOutUnderWarranty) {
+      badgeBg = const Color(0xFFEFF6FF);
+      badgeText = const Color(0xFF1D4ED8);
+      daysLabel = '$daysLeft DAYS (OUT / CLAIMABLE)';
     } else if (daysLeft > 30) {
       badgeBg = const Color(0xFFDCFCE7); // Light green
       badgeText = const Color(0xFF166534); // Dark green
@@ -942,7 +1126,27 @@ Pivot Bearings India''';
                   ),
                 ],
               ),
-              if (isExpired) ...[
+              if (item.isMarkedOutUnderWarranty) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const WhatsAppIcon(size: 16),
+                    label: const Text(
+                      'CLAIM WARRANTY ON WHATSAPP',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.4),
+                    ),
+                    onPressed: () => _shareMarkedOutWarrantyOnWhatsApp(item),
+                  ),
+                ),
+              ] else if (isExpired) ...[
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -1166,11 +1370,15 @@ Pivot Bearings India''';
                           Text(
                             isExpired
                                 ? 'WARRANTY EXPIRED'
-                                : (daysLeft == null ? 'ACTIVE COVERAGE' : 'UNDER WARRANTY'),
+                                : (bearing.isMarkedOutUnderWarranty
+                                    ? 'MARKED OUT (UNDER WARRANTY)'
+                                    : (daysLeft == null ? 'ACTIVE COVERAGE' : 'UNDER WARRANTY')),
                             style: TextStyle(
                               color: isExpired
                                   ? const Color(0xFF991B1B)
-                                  : (daysLeft != null && daysLeft <= 30 ? const Color(0xFF92400E) : const Color(0xFF166534)),
+                                  : (bearing.isMarkedOutUnderWarranty
+                                      ? const Color(0xFF1D4ED8)
+                                      : (daysLeft != null && daysLeft <= 30 ? const Color(0xFF92400E) : const Color(0xFF166534))),
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1.0,
@@ -1179,12 +1387,14 @@ Pivot Bearings India''';
                           const SizedBox(height: 2),
                           Text(
                             daysLeft != null
-                                ? (daysLeft >= 0 ? '$daysLeft DAYS LEFT TO EXPIRE' : 'EXPIRED ${daysLeft.abs()} DAYS AGO')
+                                ? (daysLeft >= 0 ? '$daysLeft DAYS LEFT TO CLAIM' : 'EXPIRED ${daysLeft.abs()} DAYS AGO')
                                 : '${bearing.warrantyDurationMonths} MONTHS (PENDING ACTIVATION)',
                             style: TextStyle(
                               color: isExpired
                                   ? const Color(0xFF991B1B)
-                                  : (daysLeft != null && daysLeft <= 30 ? const Color(0xFF92400E) : const Color(0xFF166534)),
+                                  : (bearing.isMarkedOutUnderWarranty
+                                      ? const Color(0xFF1D4ED8)
+                                      : (daysLeft != null && daysLeft <= 30 ? const Color(0xFF92400E) : const Color(0xFF166534))),
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1198,9 +1408,28 @@ Pivot Bearings India''';
               const SizedBox(height: 20),
 
               // Detail Rows
-              _buildModalRow('Bearing Category', bearing.category, isBold: true),
-              const Divider(),
-              _buildModalRow('Model Number', bearing.modelNumber, isMono: true),
+              Builder(
+                builder: (_) {
+                  final resolvedModel = (bearing.modelNumber.isNotEmpty && bearing.modelNumber != 'PBI-6204-ZZ')
+                      ? bearing.modelNumber
+                      : 'B1';
+                  final resolvedItem = ItemMasterRepository().findByCode(resolvedModel);
+                  final resolvedCategory = (bearing.category != 'Deep Groove Ball Bearing' || resolvedModel != 'B1')
+                      ? bearing.category
+                      : (resolvedItem?.category ?? 'Ball Bearing');
+                  final resolvedProduct = bearing.productName ?? resolvedItem?.itemName ?? 'Bearing 1(Ball Bearing)';
+
+                  return Column(
+                    children: [
+                      _buildModalRow('Bearing Category', resolvedCategory, isBold: true),
+                      const Divider(),
+                      _buildModalRow('Model / Part No', resolvedModel, isMono: true),
+                      const Divider(),
+                      _buildModalRow('Assigned Product', resolvedProduct),
+                    ],
+                  );
+                },
+              ),
               const Divider(),
               _buildModalRow('Operational State', bearing.stateDisplayString),
               const Divider(),
@@ -1346,7 +1575,27 @@ Pivot Bearings India''';
                 ),
               ),
               const SizedBox(height: 12),
-              if (isExpired) ...[
+              if (bearing.isMarkedOutUnderWarranty) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const WhatsAppIcon(size: 16),
+                    label: const Text(
+                      'CLAIM WARRANTY ON WHATSAPP',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.4),
+                    ),
+                    onPressed: () => _shareMarkedOutWarrantyOnWhatsApp(bearing),
+                  ),
+                ),
+              ] else if (isExpired) ...[
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.all(12),

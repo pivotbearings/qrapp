@@ -14,7 +14,7 @@ import '../../../../core/widgets/whatsapp_icon.dart';
 
 import '../../data/models/bearing_model.dart';
 import '../../data/repositories/bearing_repository.dart';
-import '../widgets/bearing_out_email_dialog.dart';
+import '../../domain/services/warranty_calculator.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
 
 class OutResultScreen extends StatefulWidget {
@@ -49,25 +49,73 @@ class _OutResultScreenState extends State<OutResultScreen> {
     return '${dt.day.toString().padLeft(2, '0')} ${months[dt.month - 1]} ${dt.year}';
   }
 
+  String _formatOperatingDuration(Duration d) {
+    final totalSec = d.inSeconds;
+    if (totalSec < 0) return '0 Secs';
+    if (totalSec < 60) {
+      return '$totalSec ${totalSec == 1 ? "Sec" : "Secs"}';
+    }
+    final totalMin = d.inMinutes;
+    final remSec = totalSec % 60;
+    if (totalMin < 60) {
+      if (remSec == 0) return '$totalMin ${totalMin == 1 ? "Min" : "Mins"}';
+      return '$totalMin ${totalMin == 1 ? "Min" : "Mins"}, $remSec ${remSec == 1 ? "Sec" : "Secs"}';
+    }
+    final totalHours = d.inHours;
+    final remMin = totalMin % 60;
+    if (totalHours < 24) {
+      if (remSec == 0) return '$totalHours ${totalHours == 1 ? "Hour" : "Hours"}, $remMin ${remMin == 1 ? "Min" : "Mins"}';
+      return '$totalHours ${totalHours == 1 ? "Hour" : "Hours"}, $remMin ${remMin == 1 ? "Min" : "Mins"}, $remSec ${remSec == 1 ? "Sec" : "Secs"}';
+    }
+    final days = d.inDays;
+    final remHours = totalHours % 24;
+    return '$days ${days == 1 ? "Day" : "Days"}, $remHours ${remHours == 1 ? "Hour" : "Hours"}, $remMin ${remMin == 1 ? "Min" : "Mins"}, $remSec ${remSec == 1 ? "Sec" : "Secs"}';
+  }
+
+  String _formatHeaderDuration(Duration d) {
+    final totalSec = d.inSeconds;
+    if (totalSec < 60) {
+      return 'Total Duration: $totalSec ${totalSec == 1 ? "Second" : "Seconds"}';
+    }
+    final totalMin = d.inMinutes;
+    final remSec = totalSec % 60;
+    if (totalMin < 60) {
+      if (remSec == 0) return 'Total Duration: $totalMin ${totalMin == 1 ? "Minute" : "Minutes"}';
+      return 'Total Duration: $totalMin Min $remSec Sec';
+    }
+    final totalHours = d.inHours;
+    final remMin = totalMin % 60;
+    if (totalHours < 24) {
+      return 'Total Duration: $totalHours Hr $remMin Min';
+    }
+    final days = d.inDays;
+    final remHours = totalHours % 24;
+    return 'Total Duration: $days Days $remHours Hr';
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final inDate = _bearing?.lastInDate ?? _bearing?.firstInDate;
+    final outDate = _bearing?.lastOutDate ?? now;
     final inDateStr = inDate != null
         ? '${_formatDate(inDate)}, ${inDate.hour.toString().padLeft(2, '0')}:${inDate.minute.toString().padLeft(2, '0')}'
         : 'Session Recorded';
-    final outDateStr = '${_formatDate(now)}, ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final outDateStr = '${_formatDate(outDate)}, ${outDate.hour.toString().padLeft(2, '0')}:${outDate.minute.toString().padLeft(2, '0')}';
 
-    final duration = inDate != null ? now.difference(inDate) : const Duration(minutes: 0);
-    final days = duration.inDays;
-    final hours = duration.inHours % 24;
-    final mins = duration.inMinutes % 60;
-    final cycleSummary = inDate != null ? '$days Days, $hours Hours, $mins Mins' : 'Cycle Closed';
-    final totalDurationHeader = inDate != null ? 'Total Duration: $days Days' : 'Cycle Successfully Closed';
+    final duration = inDate != null ? outDate.difference(inDate) : const Duration(seconds: 0);
+    final cycleSummary = inDate != null ? _formatOperatingDuration(duration) : 'Cycle Closed';
+    final totalDurationHeader = inDate != null ? _formatHeaderDuration(duration) : 'Cycle Successfully Closed';
 
-    final expiry = _bearing?.warrantyExpiryDate;
-    final isWarrantyValid = !(_bearing?.isWarrantyExpired ?? false);
-    final remainingDays = expiry?.difference(now).inDays;
+    final durationMonths = _bearing?.warrantyDurationMonths ?? 0;
+    DateTime? expiry = _bearing?.warrantyExpiryDate;
+    if (inDate != null && durationMonths > 0) {
+      expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durationMonths);
+    }
+
+    // Warranty status judged authoritatively against OUT timestamp, not current time
+    final isWarrantyValid = expiry != null ? expiry.isAfter(outDate) : !(_bearing?.isWarrantyExpired ?? false);
+    final remainingDays = expiry?.difference(outDate).inDays;
     final warrantyStatusStr = expiry != null
         ? '${isWarrantyValid ? "Active" : "Expired"} (Valid until ${_formatDate(expiry)})'
         : 'Active Standard Warranty';
@@ -153,43 +201,6 @@ class _OutResultScreenState extends State<OutResultScreen> {
 
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-                  ),
-                  elevation: 2,
-                ),
-                onPressed: () {
-                  BearingOutEmailDialog.show(
-                    context,
-                    bearingId: widget.bearingId,
-                    modelNumber: _bearing?.modelNumber ?? 'PBI-Standard',
-                    category: _bearing?.category ?? 'Deep Groove Ball Bearing',
-                    inDate: inDate,
-                    outDate: now,
-                    durationString: cycleSummary,
-                    warrantyPlan: _bearing?.warrantyDurationMonths != null
-                        ? '${_bearing!.warrantyDurationMonths} Months Industrial Warranty'
-                        : 'Standard Warranty',
-                    warrantyExpiry: _bearing?.warrantyExpiryDate != null
-                        ? _formatDate(_bearing!.warrantyExpiryDate!)
-                        : 'Active / Calculated',
-                    isUnderWarranty: _bearing != null ? !_bearing!.isWarrantyExpired : true,
-                  );
-                },
-                icon: const Icon(Icons.mark_email_read_outlined, size: 20),
-                label: const Text(
-                  'Email the Information',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-              ),
-
-              const SizedBox(height: AppDimensions.spaceSm),
-
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF25D366),
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(48),
@@ -250,17 +261,28 @@ class _OutResultScreenState extends State<OutResultScreen> {
         ? '\n• *Notes:* ${storedNotes.trim()}'
         : '';
 
-    final pName = ItemMasterRepository().findByCode(_bearing?.modelNumber ?? '')?.itemName ??
-        'Pivot Industrial Precision Bearing';
-    final warrantyCoverage = '${_bearing?.warrantyDurationMonths ?? 12} Months Industrial Warranty';
+    // Resolve authentic model and product name
+    var resolvedModel = _bearing?.modelNumber;
+    if (resolvedModel == null || resolvedModel.isEmpty || resolvedModel == 'PBI-Standard' || resolvedModel == 'PBI-6204-ZZ') {
+      final b1Item = ItemMasterRepository().findByCode('B1');
+      if (b1Item != null) {
+        resolvedModel = 'B1';
+      } else {
+        resolvedModel = _bearing?.modelNumber ?? 'B1';
+      }
+    }
+
+    final item = ItemMasterRepository().findByCode(resolvedModel) ?? ItemMasterRepository().findByCode('B1');
+    final pName = _bearing?.productName ??
+        item?.itemName ??
+        'Bearing 1(Ball Bearing)';
 
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR Serial:* ${widget.bearingId}
-• *Model / Part No:* ${_bearing?.modelNumber ?? 'PBI-Standard'}
+• *Model / Part No:* $resolvedModel
 • *Assigned Product:* $pName
-• *Batch Code:* ${_bearing?.batchCode ?? 'BATCH-ACTIVE'}
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $cycleSummary

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -146,27 +147,54 @@ class _QrScannerScreenState extends State<QrScannerScreen>
         );
       }
 
-      final isDecommissioned = result.status == QrVerificationStatus.decommissionedOut ||
+      final cleanId = (result.bearingId ?? payload).trim();
+      final upperId = cleanId.toUpperCase();
+      final prefs = await SharedPreferences.getInstance();
+
+      final isLocallyOut = prefs.getBool('pbi_bearing_permanently_out_$cleanId') == true ||
+          prefs.getBool('pbi_bearing_permanently_out_$upperId') == true ||
+          prefs.getString('pbi_track_state_$cleanId') == 'FINAL_OUT' ||
+          prefs.getString('pbi_track_state_$upperId') == 'FINAL_OUT' ||
+          prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_OUT' ||
+          prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_OUT';
+
+      final isDecommissioned = isLocallyOut ||
+          result.status == QrVerificationStatus.decommissionedOut ||
           result.currentLifecycleState == 'CURRENTLY_OUT' ||
           result.currentLifecycleState == 'FINAL_OUT' ||
           result.currentLifecycleState == 'DECOMMISSIONED';
 
-      // --- ROUTE TO STEP-BY-STEP FLOW ON VALID SCAN ---
+      final isLocallyIn = prefs.getString('pbi_track_state_$cleanId') == 'IN' ||
+          prefs.getString('pbi_track_state_$upperId') == 'IN' ||
+          prefs.getString('pbi_bearing_state_$cleanId') == 'CURRENTLY_IN' ||
+          prefs.getString('pbi_bearing_state_$upperId') == 'CURRENTLY_IN';
+
+      final isCurrentlyIn = (isLocallyIn ||
+          result.currentLifecycleState == 'CURRENTLY_IN' ||
+          result.canMarkOut ||
+          result.status == QrVerificationStatus.validWarrantyActive ||
+          result.firstInTimestamp != null) && !isDecommissioned;
+
+      // --- ROUTE DIRECTLY TO FULL SCREEN FLOW ON VALID SCAN ---
       if (!mounted) return;
-      if (result.canMarkIn && !isDecommissioned) {
-        // Guide user through clean 3-step Mark IN process
-        Navigator.pushNamed(
+      if (isCurrentlyIn) {
+        // Direct Layout: Bearing is already marked IN -> Open direct Mark Bearing OUT screen immediately
+        AppSnackBar.showSuccess(
           context,
-          AppRoutes.inConfirmation,
-          arguments: result.bearingId,
-        ).then((_) => _resumeScanning());
-        return;
-      } else if (result.canMarkOut && !isDecommissioned) {
-        // Guide user through Mark OUT removal confirmation
+          'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
+        );
         Navigator.pushNamed(
           context,
           AppRoutes.outConfirmation,
-          arguments: result.bearingId,
+          arguments: result.bearingId ?? cleanId,
+        ).then((_) => _resumeScanning());
+        return;
+      } else if (!isDecommissioned) {
+        // Direct Layout: Bearing is ready for installation -> Open Mark Bearing IN directly
+        Navigator.pushNamed(
+          context,
+          AppRoutes.inConfirmation,
+          arguments: result.bearingId ?? cleanId,
         ).then((_) => _resumeScanning());
         return;
       }
@@ -252,6 +280,27 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
   /// Shows a status modal for non-actionable (error/info) scan results
   void _showVerificationModal(QrVerificationResult result) {
+    final cleanId = (result.bearingId ?? '').trim();
+    final isDecom = result.status == QrVerificationStatus.decommissionedOut ||
+        result.currentLifecycleState == 'CURRENTLY_OUT' ||
+        result.currentLifecycleState == 'FINAL_OUT' ||
+        result.currentLifecycleState == 'DECOMMISSIONED';
+
+    // Direct Layout Rule: Never show intermediate modal dialog for Mark OUT!
+    // If bearing is already marked IN or warranty active, navigate directly to Mark Bearing OUT layout immediately
+    if (!isDecom &&
+        (result.status == QrVerificationStatus.validWarrantyActive ||
+         result.currentLifecycleState == 'CURRENTLY_IN' ||
+         result.canMarkOut ||
+         result.firstInTimestamp != null)) {
+      Navigator.pushNamed(
+        context,
+        AppRoutes.outConfirmation,
+        arguments: cleanId.isNotEmpty ? cleanId : null,
+      ).then((_) => _resumeScanning());
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isDismissible: false,
@@ -263,6 +312,11 @@ class _QrScannerScreenState extends State<QrScannerScreen>
         side: BorderSide(color: AppColors.primary, width: 2.0),
       ),
       builder: (ctx) {
+        final isDecom = result.status == QrVerificationStatus.decommissionedOut ||
+            result.currentLifecycleState == 'CURRENTLY_OUT' ||
+            result.currentLifecycleState == 'FINAL_OUT' ||
+            result.currentLifecycleState == 'DECOMMISSIONED';
+
         return Padding(
           padding: const EdgeInsets.all(AppDimensions.gutterDesktop),
           child: SingleChildScrollView(
@@ -425,7 +479,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                 const SizedBox(height: AppDimensions.spaceLg),
 
                 // Mark IN / Mark OUT action buttons when applicable
-                if (result.canMarkIn && !_isFraudLocked) ...[
+                if (result.canMarkIn && !isDecom && !_isFraudLocked) ...[
                   IndustrialButton.success(
                     label: 'MARK BEARING IN & SUBMIT',
                     icon: Icons.login,
@@ -434,20 +488,6 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                       Navigator.pushNamed(
                         context,
                         AppRoutes.inConfirmation,
-                        arguments: result.bearingId,
-                      ).then((_) => _resumeScanning());
-                    },
-                  ),
-                  const SizedBox(height: AppDimensions.spaceSm),
-                ] else if (result.canMarkOut && !_isFraudLocked) ...[
-                  IndustrialButton.danger(
-                    label: 'MARK BEARING OUT & SUBMIT',
-                    icon: Icons.logout,
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      Navigator.pushNamed(
-                        context,
-                        AppRoutes.outConfirmation,
                         arguments: result.bearingId,
                       ).then((_) => _resumeScanning());
                     },

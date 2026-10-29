@@ -8,7 +8,6 @@ import '../../../qr_generation/domain/services/bearing_encryption_key_service.da
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 
 import '../../../rewards/data/services/reward_service.dart';
-import '../../../rewards/domain/models/reward_models.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
 
 /// Pivot Bearings India - Bearing Tracking Service
@@ -75,31 +74,43 @@ class BearingTrackService {
             await prefs.setStringList('pbi_tracked_bearings_list', trackedList);
           }
 
+          final upperBId = bId.toUpperCase();
           if (res.action == 'BEARING_OUT') {
             await prefs.setString('$_trackStatePrefix$bId', _finalOutState);
+            await prefs.setString('$_trackStatePrefix$upperBId', _finalOutState);
             await prefs.setString('pbi_bearing_state_$bId', 'CURRENTLY_OUT');
-            await prefs.setString('$_trackOutTimePrefix$bId', (res.outTimestamp ?? DateTime.now()).toIso8601String());
+            await prefs.setString('pbi_bearing_state_$upperBId', 'CURRENTLY_OUT');
+            final outIso = (res.outTimestamp ?? DateTime.now()).toIso8601String();
+            await prefs.setString('$_trackOutTimePrefix$bId', outIso);
+            await prefs.setString('$_trackOutTimePrefix$upperBId', outIso);
 
             final historyKey = '$_trackHistoryPrefix$bId';
             List<dynamic> historyList = [];
-            final histStr = prefs.getString(historyKey);
+            final histStr = prefs.getString(historyKey) ?? prefs.getString('$_trackHistoryPrefix$upperBId');
             if (histStr != null) {
               try {
                 historyList = jsonDecode(histStr) as List<dynamic>;
               } catch (_) {}
             }
+            final inIso = (res.inTimestamp ?? DateTime.now().subtract(const Duration(hours: 1))).toIso8601String();
             historyList.insert(0, {
-              'cycle_number': res.cycleNumber ?? (historyList.length + 1),
-              'in_timestamp': (res.inTimestamp ?? DateTime.now().subtract(const Duration(hours: 1))).toIso8601String(),
-              'out_timestamp': (res.outTimestamp ?? DateTime.now()).toIso8601String(),
-              'duration_seconds': res.durationSeconds ?? 0,
+              'cycle_number': res.cycleNumber,
+              'in_timestamp': inIso,
+              'out_timestamp': outIso,
+              'duration_seconds': res.durationSeconds,
               'notes': res.notes ?? notes,
             });
-            await prefs.setString(historyKey, jsonEncode(historyList));
+            final encHist = jsonEncode(historyList);
+            await prefs.setString(historyKey, encHist);
+            await prefs.setString('$_trackHistoryPrefix$upperBId', encHist);
           } else if (res.action == 'BEARING_IN') {
             await prefs.setString('$_trackStatePrefix$bId', 'IN');
+            await prefs.setString('$_trackStatePrefix$upperBId', 'IN');
             await prefs.setString('pbi_bearing_state_$bId', 'CURRENTLY_IN');
-            await prefs.setString('$_trackInTimePrefix$bId', (res.inTimestamp ?? DateTime.now()).toIso8601String());
+            await prefs.setString('pbi_bearing_state_$upperBId', 'CURRENTLY_IN');
+            final inIso = (res.inTimestamp ?? DateTime.now()).toIso8601String();
+            await prefs.setString('$_trackInTimePrefix$bId', inIso);
+            await prefs.setString('$_trackInTimePrefix$upperBId', inIso);
           }
           await QrManagementRepository.syncBearingStateChange(
             bearingId: bId,
@@ -201,20 +212,25 @@ class BearingTrackService {
     final now = DateTime.now();
 
     // Resolve model info first
-    String model = 'PBI-6204-ZZ';
-    String batch = 'BATCH-2026-OCT-A';
+    final defaultItem = ItemMasterRepository().findByCode('B1') ??
+        (ItemMasterRepository().getAllItems().isNotEmpty ? ItemMasterRepository().getAllItems().first : null);
+    String model = defaultItem?.itemCode ?? 'B1';
+    String batch = 'BATCH-ACTIVE';
     String plant = 'Plant 02 — Chakan Industrial Complex';
-    String? productName;
-    int warrantyMonths = 6;
+    String? productName = defaultItem?.itemName;
+    int warrantyMonths = defaultItem?.defaultWarrantyMonths ?? 12;
 
     await QrManagementRepository.loadFromLocalStorage();
     final qrRec = QrManagementRepository.findQrRecord(bearingId) ??
         QrManagementRepository.findQrRecord(cleanPayload);
     if (qrRec != null) {
-      model = qrRec['model_number']?.toString() ?? model;
+      final recModel = qrRec['model_number']?.toString();
+      if (recModel != null && recModel != 'PBI-6204-ZZ') {
+        model = recModel;
+      }
       batch = qrRec['batch_code']?.toString() ?? batch;
       plant = qrRec['plant_location']?.toString() ?? plant;
-      productName = qrRec['product_name']?.toString() ?? qrRec['item_name']?.toString();
+      productName = qrRec['product_name']?.toString() ?? qrRec['item_name']?.toString() ?? productName;
       warrantyMonths = (qrRec['duration_months'] as num?)?.toInt() ?? warrantyMonths;
     } else if (isKnownSeed) {
       final info = knownRegisteredIds[bearingId]!;
@@ -224,7 +240,7 @@ class BearingTrackService {
     } else if (isGenuineKey) {
       final decoded = BearingEncryptionKeyService.decodeKey(bearingId);
       final modelTok = decoded['model_token'] ?? '6204';
-      model = 'PBI-$modelTok-ZZ';
+      model = (modelTok == '6204' && defaultItem != null) ? defaultItem.itemCode : 'PBI-$modelTok-ZZ';
     }
 
     if (productName == null) {
@@ -245,7 +261,7 @@ class BearingTrackService {
 
     // Load past history
     List<BearingCycleRecord> history = [];
-    final historyJson = prefs.getString(historyKey);
+    final historyJson = prefs.getString(historyKey) ?? prefs.getString('$_trackHistoryPrefix${bearingId.toUpperCase()}');
     if (historyJson != null) {
       try {
         final decoded = jsonDecode(historyJson) as List;
@@ -253,19 +269,58 @@ class BearingTrackService {
       } catch (_) {}
     }
 
+    // STRICT LIFECYCLE GUARD: Cycle 2 is forbidden! Once marked out, bearing is retired permanently
+    final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$bearingId') == true ||
+        prefs.getBool('pbi_bearing_permanently_out_${bearingId.toUpperCase()}') == true ||
+        localState == _finalOutState ||
+        localState == 'CURRENTLY_OUT' ||
+        qrRecState == 'CURRENTLY_OUT' ||
+        prefs.getString(outTimeKey) != null ||
+        prefs.getString('$_trackOutTimePrefix${bearingId.toUpperCase()}') != null;
+
+    if (currentState != 'IN' && (isPermanentlyOut || history.isNotEmpty)) {
+      DateTime? histIn = history.isNotEmpty ? history.first.inTimestamp : null;
+      DateTime? histOut = history.isNotEmpty ? history.first.outTimestamp : null;
+      if (histOut == null) {
+        final outStr = prefs.getString(outTimeKey) ?? prefs.getString('$_trackOutTimePrefix${bearingId.toUpperCase()}');
+        if (outStr != null) histOut = DateTime.tryParse(outStr)?.toLocal();
+      }
+      if (histIn == null) {
+        final inStr = prefs.getString(inTimeKey) ?? prefs.getString('$_trackInTimePrefix${bearingId.toUpperCase()}');
+        if (inStr != null) histIn = DateTime.tryParse(inStr)?.toLocal();
+      }
+
+      return BearingTrackResult.alreadyOut(
+        bearingId: bearingId,
+        inTimestamp: histIn,
+        outTimestamp: histOut,
+        modelNumber: model,
+        productName: productName,
+        message: 'This bearing has already completed its lifecycle and is permanently decommissioned. Cycle 2 is strictly prohibited.',
+        rawPayload: cleanPayload,
+      );
+    }
+
     if (currentState == 'IN') {
       // =======================================================================
       // ACTION: BEARING OUT
       // =======================================================================
       DateTime inTime;
-      final storedInTimeStr = prefs.getString(inTimeKey);
+      final storedInTimeStr = prefs.getString(inTimeKey) ??
+          prefs.getString('$_trackInTimePrefix${bearingId.toUpperCase()}') ??
+          prefs.getString('$_trackInTimePrefix${cleanPayload.toUpperCase()}');
       if (storedInTimeStr != null) {
-        inTime = DateTime.tryParse(storedInTimeStr) ?? now.subtract(const Duration(hours: 1));
+        inTime = DateTime.tryParse(storedInTimeStr)?.toLocal() ?? now.subtract(const Duration(hours: 1));
       } else {
-        inTime = now.subtract(const Duration(hours: 1));
+        final qrInTime = qrRec?['first_in_timestamp'] ?? qrRec?['last_in_timestamp'];
+        if (qrInTime != null) {
+          inTime = DateTime.tryParse(qrInTime.toString())?.toLocal() ?? now;
+        } else {
+          inTime = now;
+        }
       }
 
-      final durSec = now.difference(inTime).inSeconds;
+      final durSec = now.difference(inTime).inSeconds.abs();
       final safeDurSec = durSec > 0 ? durSec : 1;
 
       final cycleNum = history.length + 1;
@@ -279,11 +334,16 @@ class BearingTrackService {
       // Append to history (newest first)
       history.insert(0, newCycle);
 
+      final upperId = bearingId.toUpperCase();
       // Persist to storage — set FINAL_OUT to permanently block further scans
       await prefs.setString(stateKey, _finalOutState);
+      await prefs.setString('$_trackStatePrefix$upperId', _finalOutState);
       await prefs.setBool('pbi_bearing_permanently_out_$bearingId', true);
+      await prefs.setBool('pbi_bearing_permanently_out_$upperId', true);
       await prefs.setString(outTimeKey, now.toIso8601String());
+      await prefs.setString('$_trackOutTimePrefix$upperId', now.toIso8601String());
       await prefs.setString('pbi_bearing_state_$bearingId', 'CURRENTLY_OUT');
+      await prefs.setString('pbi_bearing_state_$upperId', 'CURRENTLY_OUT');
 
       if (SupabaseService.isInitialized) {
         try {
@@ -343,9 +403,13 @@ class BearingTrackService {
       // =======================================================================
       // ACTION: BEARING IN
       // =======================================================================
+      final upperId = bearingId.toUpperCase();
       await prefs.setString(stateKey, 'IN');
+      await prefs.setString('$_trackStatePrefix$upperId', 'IN');
       await prefs.setString(inTimeKey, now.toIso8601String());
+      await prefs.setString('$_trackInTimePrefix$upperId', now.toIso8601String());
       await prefs.setString('pbi_bearing_state_$bearingId', 'CURRENTLY_IN');
+      await prefs.setString('pbi_bearing_state_$upperId', 'CURRENTLY_IN');
 
       if (SupabaseService.isInitialized) {
         try {
@@ -491,7 +555,9 @@ class BearingTrackService {
           final inStr = prefs.getString('$_trackInTimePrefix$id');
           final inDt = inStr != null ? (DateTime.tryParse(inStr) ?? DateTime.now()) : DateTime.now();
           final qr = QrManagementRepository.findQrRecord(id);
-          final model = qr?['model_number']?.toString() ?? 'PBI-6204-ZZ';
+          final model = (qr?['model_number'] != null && qr?['model_number'] != 'PBI-6204-ZZ')
+              ? qr!['model_number'].toString()
+              : (ItemMasterRepository().findByCode('B1')?.itemCode ?? 'B1');
           final batch = qr?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
           final notes = prefs.getString('pbi_bearing_notes_$id');
 
@@ -576,7 +642,9 @@ class BearingTrackService {
 
       for (final id in trackedIds) {
         final qr = QrManagementRepository.findQrRecord(id);
-        final model = qr?['model_number']?.toString() ?? 'PBI-6204-ZZ';
+        final model = (qr?['model_number'] != null && qr?['model_number'] != 'PBI-6204-ZZ')
+            ? qr!['model_number'].toString()
+            : (ItemMasterRepository().findByCode('B1')?.itemCode ?? 'B1');
         final batch = qr?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
 
         // Check cycle history list

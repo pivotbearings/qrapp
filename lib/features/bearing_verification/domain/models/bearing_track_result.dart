@@ -19,10 +19,10 @@ class BearingCycleRecord {
     return BearingCycleRecord(
       cycleNumber: (json['cycle_number'] as num?)?.toInt() ?? 1,
       inTimestamp: json['in_timestamp'] != null
-          ? DateTime.tryParse(json['in_timestamp'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['in_timestamp'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       outTimestamp: json['out_timestamp'] != null
-          ? DateTime.tryParse(json['out_timestamp'].toString())
+          ? DateTime.tryParse(json['out_timestamp'].toString())?.toLocal()
           : null,
       durationSeconds: (json['duration_seconds'] as num?)?.toInt(),
     );
@@ -165,7 +165,20 @@ class BearingTrackResult {
             .toList() ??
         [];
 
-    final durSec = (json['duration_seconds'] as num?)?.toInt() ?? 0;
+    final inTime = json['in_timestamp'] != null
+        ? DateTime.tryParse(json['in_timestamp'].toString())?.toLocal()
+        : null;
+    final outTime = json['out_timestamp'] != null
+        ? DateTime.tryParse(json['out_timestamp'].toString())?.toLocal()
+        : null;
+
+    final parsedDurSec = (json['duration_seconds'] as num?)?.toInt();
+    final durSec = (parsedDurSec != null && parsedDurSec > 0)
+        ? parsedDurSec
+        : (outTime != null && inTime != null
+            ? outTime.difference(inTime).inSeconds.abs()
+            : 0);
+
     final durDays = (json['duration_days'] as num?)?.toInt() ?? (durSec ~/ 86400);
     final durHours = (json['duration_hours'] as num?)?.toInt() ?? ((durSec % 86400) ~/ 3600);
     final durMinutes = (json['duration_minutes'] as num?)?.toInt() ?? ((durSec % 3600) ~/ 60);
@@ -179,12 +192,8 @@ class BearingTrackResult {
       batchCode: json['batch_code']?.toString() ?? 'BATCH-ACTIVE',
       plantLocation: json['plant_location']?.toString() ?? 'Plant 02 — Chakan Industrial Complex',
       cycleNumber: (json['cycle_number'] as num?)?.toInt() ?? 1,
-      inTimestamp: json['in_timestamp'] != null
-          ? DateTime.tryParse(json['in_timestamp'].toString())
-          : null,
-      outTimestamp: json['out_timestamp'] != null
-          ? DateTime.tryParse(json['out_timestamp'].toString())
-          : null,
+      inTimestamp: inTime,
+      outTimestamp: outTime,
       durationSeconds: durSec,
       durationDays: durDays,
       durationHours: durHours,
@@ -192,7 +201,7 @@ class BearingTrackResult {
       warrantyDurationMonths: (json['duration_months'] as num?)?.toInt() ??
           (json['warranty_duration_months'] as num?)?.toInt(),
       warrantyExpiryTimestamp: json['warranty_expiry_timestamp'] != null
-          ? DateTime.tryParse(json['warranty_expiry_timestamp'].toString())
+          ? DateTime.tryParse(json['warranty_expiry_timestamp'].toString())?.toLocal()
           : null,
       message: json['message']?.toString(),
       notes: json['notes']?.toString(),
@@ -255,6 +264,10 @@ class BearingTrackResult {
         return 'You used this bearing for $durationHours ${durationHours == 1 ? "hour" : "hours"}.';
       }
     } else if (durationMinutes > 0) {
+      final remSec = durationSeconds % 60;
+      if (remSec > 0) {
+        return 'You used this bearing for $durationMinutes ${durationMinutes == 1 ? "minute" : "minutes"} and $remSec ${remSec == 1 ? "second" : "seconds"}.';
+      }
       return 'You used this bearing for $durationMinutes ${durationMinutes == 1 ? "minute" : "minutes"}.';
     } else {
       final sec = durationSeconds > 0 ? durationSeconds : 1;

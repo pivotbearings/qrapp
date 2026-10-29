@@ -304,11 +304,19 @@ class _QrBulkGenerationScreenState extends State<QrBulkGenerationScreen> {
                                               ),
                                             ),
                                             const SizedBox(height: 2),
-                                            Text(
-                                              '${_selectedItem!.itemName} (${_selectedItem!.category})',
-                                              style: AppTypography.caption.copyWith(height: 1.2),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
+                                            Builder(
+                                              builder: (_) {
+                                                final name = _selectedItem!.itemName.trim();
+                                                final cat = _selectedItem!.category.trim();
+                                                final hasCat = cat.isNotEmpty && name.toLowerCase().contains(cat.toLowerCase());
+                                                final displayText = hasCat ? name : (cat.isNotEmpty ? '$name ($cat)' : name);
+                                                return Text(
+                                                  displayText,
+                                                  style: AppTypography.caption.copyWith(height: 1.2),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                );
+                                              },
                                             ),
                                           ],
                                         ),

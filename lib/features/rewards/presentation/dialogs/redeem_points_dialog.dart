@@ -40,6 +40,10 @@ class _RedeemPointsDialogState extends State<RedeemPointsDialog> {
   final TextEditingController _confirmAccountCtrl = TextEditingController();
   final TextEditingController _ifscCtrl = TextEditingController();
 
+  // Mandatory Supplier Details for Redemption
+  final TextEditingController _supplierNameCtrl = TextEditingController();
+  final TextEditingController _supplierContactCtrl = TextEditingController();
+
   bool _isSubmitting = false;
   double _calculatedInr = 0.0;
 
@@ -64,6 +68,8 @@ class _RedeemPointsDialogState extends State<RedeemPointsDialog> {
     _accountNumberCtrl.dispose();
     _confirmAccountCtrl.dispose();
     _ifscCtrl.dispose();
+    _supplierNameCtrl.dispose();
+    _supplierContactCtrl.dispose();
     super.dispose();
   }
 
@@ -94,6 +100,8 @@ class _RedeemPointsDialogState extends State<RedeemPointsDialog> {
       final res = await RewardService.submitRedemptionRequest(
         points: pts,
         payoutMethod: _payoutMethod,
+        supplierName: _supplierNameCtrl.text.trim(),
+        supplierContact: _supplierContactCtrl.text.trim(),
         upiId: _payoutMethod == 'UPI' ? _upiCtrl.text.trim() : null,
         bankAccountNumber: _payoutMethod == 'BANK_TRANSFER' ? _accountNumberCtrl.text.trim() : null,
         bankIfsc: _payoutMethod == 'BANK_TRANSFER' ? _ifscCtrl.text.trim().toUpperCase() : null,
@@ -461,6 +469,72 @@ class _RedeemPointsDialogState extends State<RedeemPointsDialog> {
                     validator: (v) => _payoutMethod == 'BANK_TRANSFER' && (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
                 ],
+
+                const SizedBox(height: 16),
+
+                // Supplier Information (Mandatory to Redeem Points)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.primary.withAlpha(60), width: 1.2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.storefront_rounded, size: 16, color: AppColors.primary),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'SUPPLIER DETAILS (MANDATORY)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      const Text(
+                        'Where did you purchase your bearings from? Supplier Name and Contact Number are mandatory to redeem points.',
+                        style: TextStyle(fontSize: 10.5, color: Colors.black54),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildLabel('Supplier / Vendor Name *'),
+                      TextFormField(
+                        controller: _supplierNameCtrl,
+                        decoration: _inputDeco('e.g. Metro Industrial Spares'),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Supplier name is mandatory to redeem points';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _buildLabel('Supplier Contact Number *'),
+                      TextFormField(
+                        controller: _supplierContactCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: _inputDeco('e.g. 9876543210 (10 digits)'),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Supplier contact number is mandatory to redeem points';
+                          }
+                          final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
+                          if (digits.length < 10) {
+                            return 'Enter a valid 10-digit mobile number';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
 
                 const SizedBox(height: 16),
 

@@ -379,40 +379,6 @@ class _BearingOutEmailDialogState extends State<BearingOutEmailDialog> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _successMessage != null ? const Color(0xFF16A34A) : AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        elevation: 1,
-                      ),
-                      onPressed: _isSending ? null : _handleSendEmail,
-                      icon: _isSending
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : Icon(
-                              _successMessage != null ? Icons.check : (_errorMessage != null ? Icons.refresh : Icons.email_rounded),
-                              size: 16,
-                            ),
-                      label: Text(
-                        _isSending
-                            ? 'SENDING VIA RESEND...'
-                            : (_successMessage != null
-                                ? 'RESEND AGAIN'
-                                : (_errorMessage != null ? 'RETRY SENDING' : 'Email the Information')),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ],
