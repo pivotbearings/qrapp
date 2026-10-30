@@ -15,6 +15,7 @@ import '../../../bearing_verification/data/models/bearing_model.dart';
 import '../../../bearing_verification/data/repositories/bearing_repository.dart';
 import '../../../bearing_verification/data/services/bearing_track_service.dart';
 import '../../../rewards/data/services/reward_service.dart';
+import '../../../../core/widgets/app_snack_bar.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({super.key});
@@ -33,6 +34,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   int _expiredWarrantyCount = 0;
   int _markedOutUnderWarrantyCount = 0;
   bool _isNavigating = false;
+  bool? _isRefreshing = false;
+  double? _refreshTurns = 0.0;
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _refreshTurns ??= 0.0;
+    _isRefreshing ??= false;
+  }
   RewardProfile _rewardProfile = RewardProfile.defaultProfile();
   AdBannerConfig _adConfig = AdBannerConfig.defaultConfig();
   StreamSubscription<AdBannerConfig>? _adBannerSub;
@@ -120,44 +130,70 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadDashboardData() async {
-    final profile = await SupabaseService.fetchUserProfile();
-    final auth = AuthController.instance;
-    final bearings = await _bearingRepo.getAllBearings(
-      customerId: profile['id']?.toString() ?? auth.userId,
-      customerEmail: profile['email']?.toString() ?? auth.userEmail,
-      facilityCode: profile['facility_code']?.toString(),
-    );
-
-    final inHistory = await BearingTrackService.fetchTrackInHistory();
-    final outHistory = await BearingTrackService.fetchTrackOutHistory();
-    final inFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyIn).length;
-    final outFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyOut).length;
-
+  Future<void> _loadDashboardData({bool showFeedback = false}) async {
+    if (_isRefreshing ?? false) return;
     if (mounted) {
       setState(() {
-        _inCount = math.max(inHistory.length, inFromBearings);
-        _outCount = math.max(outHistory.length, outFromBearings);
-        _underWarrantyCount = bearings.where((b) => b.isUnderWarranty).length;
-        _expiringSoonCount = bearings.where((b) => b.isExpiringSoon).length;
-        _expiredWarrantyCount = bearings.where((b) => b.isWarrantyExpired).length;
-        _markedOutUnderWarrantyCount = bearings.where((b) => b.isMarkedOutUnderWarranty).length;
+        _isRefreshing = true;
+        _refreshTurns = (_refreshTurns ?? 0.0) + 1.0;
       });
     }
 
     try {
-      final rp = await RewardService.fetchUserRewardProfile();
-      if (mounted) {
-        setState(() => _rewardProfile = rp);
-      }
-    } catch (_) {}
+      try {
+        await AuthController.instance.refreshPermissions();
+      } catch (_) {}
 
-    try {
-      final ad = await AdBannerService.fetchBannerConfig(forceRefresh: true);
+      final profile = await SupabaseService.fetchUserProfile();
+      final auth = AuthController.instance;
+      final bearings = await _bearingRepo.getAllBearings(
+        customerId: profile['id']?.toString() ?? auth.userId,
+        customerEmail: profile['email']?.toString() ?? auth.userEmail,
+        facilityCode: profile['facility_code']?.toString(),
+      );
+
+      final inHistory = await BearingTrackService.fetchTrackInHistory();
+      final outHistory = await BearingTrackService.fetchTrackOutHistory();
+      final inFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyIn).length;
+      final outFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyOut).length;
+
       if (mounted) {
-        setState(() => _adConfig = ad);
+        setState(() {
+          _inCount = math.max(inHistory.length, inFromBearings);
+          _outCount = math.max(outHistory.length, outFromBearings);
+          _underWarrantyCount = bearings.where((b) => b.isUnderWarranty).length;
+          _expiringSoonCount = bearings.where((b) => b.isExpiringSoon).length;
+          _expiredWarrantyCount = bearings.where((b) => b.isWarrantyExpired).length;
+          _markedOutUnderWarrantyCount = bearings.where((b) => b.isMarkedOutUnderWarranty).length;
+        });
       }
-    } catch (_) {}
+
+      try {
+        final rp = await RewardService.fetchUserRewardProfile();
+        if (mounted) {
+          setState(() => _rewardProfile = rp);
+        }
+      } catch (_) {}
+
+      try {
+        final ad = await AdBannerService.fetchBannerConfig(forceRefresh: true);
+        if (mounted) {
+          setState(() => _adConfig = ad);
+        }
+      } catch (_) {}
+
+      if (showFeedback && mounted) {
+        AppSnackBar.showSuccess(context, 'Dashboard data refreshed');
+      }
+    } catch (e) {
+      if (showFeedback && mounted) {
+        AppSnackBar.showError(context, 'Refresh failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
+    }
   }
 
   @override
@@ -173,196 +209,182 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             constraints: const BoxConstraints(maxWidth: 580),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final minH = (constraints.maxHeight.isFinite && constraints.maxHeight > AppDimensions.gutterMobile * 2)
-                    ? (constraints.maxHeight - (AppDimensions.gutterMobile * 2))
-                    : 0.0;
-                final bannerHeight = (constraints.maxWidth * 0.46).clamp(150.0, 240.0);
+                final bool hasReward = auth.hasRewardPointsAccess && _rewardProfile.isEnabled && _rewardProfile.isRewardEligible;
+                // If screen is unusually short (e.g. landscape or < 480px), allow scrolling fallback
+                final bool isShortScreen = constraints.maxHeight.isFinite && constraints.maxHeight < 480;
 
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: minH,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // --- TOP SECTION ---
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Header & Brand Title with Personalized Customer Greeting (Requirement 2)
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Widget buildContent({required bool useExpanded}) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Header & Brand Title with Personalized Customer Greeting (Enlarged)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
                               children: [
-                                Expanded(
-                                  child: Row(
-                                    children: [
-                                      Image.asset(
-                                        'assets/company_logo.webp',
-                                        height: 38,
-                                        fit: BoxFit.contain,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Namaste, ${auth.userName?.trim().isNotEmpty == true && auth.userName != "Operator" ? auth.userName!.trim() : "Valued Customer"}',
-                                              style: const TextStyle(
-                                                color: AppColors.primary,
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 15,
-                                                letterSpacing: -0.2,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            Text(
-                                              auth.userCompany?.trim().isNotEmpty == true
-                                                  ? auth.userCompany!.trim()
-                                                  : 'Pivot Precision Partner',
-                                              style: TextStyle(
-                                                color: Colors.black.withOpacity(0.55),
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 10.5,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                Image.asset(
+                                  'assets/company_logo.webp',
+                                  height: 50,
+                                  fit: BoxFit.contain,
                                 ),
-                                if (auth.isAdmin)
-                                  IconButton(
-                                    icon: const Icon(Icons.admin_panel_settings_rounded, color: AppColors.primary, size: 26),
-                                    tooltip: 'Open Admin Workstation',
-                                    onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Namaste, ${auth.userName?.trim().isNotEmpty == true && auth.userName != "Operator" ? auth.userName!.trim() : "Valued Customer"}',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 18,
+                                      letterSpacing: -0.2,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                IconButton(
-                                  icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
-                                  tooltip: 'Refresh Dashboard',
-                                  onPressed: _loadDashboardData,
                                 ),
                               ],
                             ),
+                          ),
+                          if (auth.isAdmin)
+                            IconButton(
+                              icon: const Icon(Icons.admin_panel_settings_rounded, color: AppColors.primary, size: 26),
+                              tooltip: 'Open Admin Workstation',
+                              onPressed: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                            ),
+                          IconButton(
+                            icon: AnimatedRotation(
+                              turns: _refreshTurns ?? 0.0,
+                              duration: const Duration(milliseconds: 650),
+                              curve: Curves.easeInOut,
+                              child: (_isRefreshing ?? false)
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(strokeWidth: 2.2, color: AppColors.primary),
+                                    )
+                                  : const Icon(Icons.refresh_rounded, color: AppColors.primary, size: 28),
+                            ),
+                            tooltip: 'Refresh Dashboard',
+                            onPressed: (_isRefreshing ?? false) ? null : () => _loadDashboardData(showFeedback: true),
+                          ),
+                        ],
+                      ),
 
-                            const SizedBox(height: AppDimensions.spaceMd),
+                      const SizedBox(height: 8),
 
-                            // Admin Workstation Quick Access Banner
-                            if (auth.isAdmin) ...[
-                              InkWell(
-                                mouseCursor: SystemMouseCursors.click,
-                                onTap: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
-                                borderRadius: BorderRadius.circular(16),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 8,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
+                      // Admin Workstation Quick Access Banner
+                      if (auth.isAdmin) ...[
+                        InkWell(
+                          mouseCursor: SystemMouseCursors.click,
+                          onTap: () => Navigator.pushNamed(context, AppRoutes.adminDashboard),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black12,
+                                  blurRadius: 8,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.admin_panel_settings, color: Colors.white, size: 26),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
-                                      const SizedBox(width: 12),
-                                      const Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'ADMIN WORKSTATION',
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 13,
-                                                letterSpacing: 0.5,
-                                              ),
-                                            ),
-                                            SizedBox(height: 2),
-                                            Text(
-                                              'Tap to open telemetry, QR generation & registry',
-                                              style: TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ],
+                                      Text(
+                                        'ADMIN WORKSTATION',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 13,
+                                          letterSpacing: 0.5,
                                         ),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Text(
-                                          'OPEN',
-                                          style: TextStyle(
-                                            color: AppColors.primary,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 11,
-                                          ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        'Tap to open telemetry, QR generation & registry',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 11,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: AppDimensions.spaceMd),
-                            ],
-
-                            // Dynamic Metric Row / Dashboard:
-                            // Requirement 3: Both modules must not be active simultaneously.
-                            // Requirement 8: When Warranty is enabled, display 3 summary counts (Under Warranty, Expiring Soon, Warranty Expired).
-                            // Requirement 7: When Track Your Bearing is enabled, display two separate options (Product In, Product Out).
-                            if (auth.hasWarrantyAccess) ...[
-                              _buildWarrantyDashboard(),
-                              const SizedBox(height: AppDimensions.spaceMd),
-                            ] else if (auth.hasTrackBearingAccess) ...[
-                              _buildTrackBearingDashboard(),
-                              const SizedBox(height: AppDimensions.spaceMd),
-                            ] else ...[
-                              // Standard default badge for newly registered users
-                              _buildDefaultAuthenticationBadge(),
-                              const SizedBox(height: AppDimensions.spaceMd),
-                            ],
-
-                            // ADVERTISEMENT BANNER (Configured from Admin Panel, WebP format)
-                            if (_adConfig.isActive) ...[
-                              _buildAdvertisementBanner(bannerHeight),
-                              const SizedBox(height: AppDimensions.spaceMd),
-                            ],
-                          ],
-                        ),
-
-                        // --- BOTTOM SECTION (Anchored at the bottom above navigation bar) ---
-                        // Requirement 2: If admin disables Reward Points, hide Reward Points Wallet
-                        if (auth.hasRewardPointsAccess && _rewardProfile.isEnabled && _rewardProfile.isRewardEligible) ...[
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const SizedBox(height: AppDimensions.spaceSm),
-                              _buildRewardWalletCard(),
-                              const SizedBox(height: AppDimensions.spaceSm),
-                            ],
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'OPEN',
+                                    style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
+                        ),
+                        const SizedBox(height: 8),
                       ],
-                    ),
-                  ),
+
+                      // Dynamic Metric Row / Dashboard:
+                      // Requirement 3: Both modules must not be active simultaneously.
+                      // Requirement 8: When Warranty is enabled, display 3 summary counts (Under Warranty, Expiring Soon, Warranty Expired).
+                      // Requirement 7: When Track Your Bearing is enabled, display two separate options (Product In, Product Out).
+                      if (auth.hasWarrantyAccess) ...[
+                        _buildWarrantyDashboard(),
+                        const SizedBox(height: 8),
+                      ] else if (auth.hasTrackBearingAccess) ...[
+                        _buildTrackBearingDashboard(),
+                        const SizedBox(height: 8),
+                      ] else ...[
+                        _buildDefaultAuthenticationBadge(),
+                        const SizedBox(height: 8),
+                      ],
+
+                      // ADVERTISEMENT BANNER: Expanded to occupy 100% of remaining viewport with ZERO scroll
+                      if (_adConfig.isActive)
+                        if (useExpanded)
+                          Expanded(
+                            child: _buildAdvertisementBanner(expand: true),
+                          )
+                        else
+                          _buildAdvertisementBanner(height: 220.0),
+
+                      // Reward Points Wallet
+                      if (hasReward) ...[
+                        const SizedBox(height: 8),
+                        _buildRewardWalletCard(),
+                      ],
+                    ],
+                  );
+                }
+
+                if (isShortScreen) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: buildContent(useExpanded: false),
+                  );
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: buildContent(useExpanded: true),
                 );
               },
             ),
@@ -374,10 +396,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   /// Advertisement Banner dynamically configurable from Admin Panel
-  Widget _buildAdvertisementBanner(double height) {
+  Widget _buildAdvertisementBanner({double height = 220.0, bool expand = false}) {
     return Container(
       width: double.infinity,
-      height: height,
+      height: expand ? null : height,
       decoration: BoxDecoration(
         color: const Color(0xFF001F59),
         borderRadius: BorderRadius.circular(16),
@@ -390,48 +412,21 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _openAdBannerLink,
-          mouseCursor: SystemMouseCursors.click,
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _buildAdBannerImage(_adConfig),
-
-              // Official Featured Badge
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.white24, width: 0.8),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.open_in_new, color: Colors.white, size: 10),
-                      SizedBox(width: 4),
-                      Text(
-                        'FEATURED',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+      // ClipRRect ensures the image is clipped inside the border — not on top of it
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14.5),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _openAdBannerLink,
+            mouseCursor: SystemMouseCursors.click,
+            borderRadius: BorderRadius.circular(14.5),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildAdBannerImage(_adConfig),
+              ],
+            ),
           ),
         ),
       ),
@@ -439,7 +434,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   Widget _buildAdBannerImage(AdBannerConfig config) {
-    final fit = config.fitMode == 'cover' ? BoxFit.cover : BoxFit.contain;
+    final fit = config.fitMode == 'contain' ? BoxFit.contain : BoxFit.cover;
 
     if (config.image.startsWith('assets/')) {
       return Image.asset(
@@ -880,7 +875,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             Expanded(
               child: _buildWarrantySummaryCard(
                 title: 'Under Warranty',
-                subtitle: 'Active coverage',
                 count: '$_underWarrantyCount',
                 icon: Icons.shield_rounded,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 1).then((_) => _loadDashboardData()),
@@ -890,7 +884,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             Expanded(
               child: _buildWarrantySummaryCard(
                 title: 'Expiring Soon',
-                subtitle: 'Near expiry (≤20%)',
                 count: '$_expiringSoonCount',
                 icon: Icons.timer_outlined,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 2).then((_) => _loadDashboardData()),
@@ -900,7 +893,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             Expanded(
               child: _buildWarrantySummaryCard(
                 title: 'Warranty Expired',
-                subtitle: 'Coverage ended',
                 count: '$_expiredWarrantyCount',
                 icon: Icons.history_rounded,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 3).then((_) => _loadDashboardData()),
@@ -908,62 +900,47 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        // Dedicated Section: Marked Out Bearings Under Warranty (Claim Warranty Available)
+        const SizedBox(height: 8),
+        // Dedicated Section: Marked Out Bearings Under Warranty
         InkWell(
           onTap: () => Navigator.pushNamed(context, AppRoutes.markedOutWarranty).then((_) => _loadDashboardData()),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.primary.withValues(alpha: 0.15), width: 1.2),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.assignment_turned_in_rounded, size: 20, color: AppColors.primary),
+                  child: const Icon(Icons.assignment_turned_in_rounded, size: 18, color: AppColors.primary),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Marked Out Under Warranty',
-                            style: AppTypography.labelMd.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF25D366),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'CLAIM',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
                       Text(
-                        '$_markedOutUnderWarrantyCount bearings removed before expiry (Supplier Claim Ready)',
-                        style: AppTypography.caption.copyWith(color: Colors.black54, fontSize: 11),
+                        'Marked Out Under Warranty',
+                        style: AppTypography.labelMd.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 12),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '$_markedOutUnderWarrantyCount bearings removed before expiry',
+                        style: AppTypography.caption.copyWith(color: Colors.black54, fontSize: 10.5),
                       ),
                     ],
                   ),
                 ),
-                const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
+                const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: AppColors.primary),
               ],
             ),
           ),
@@ -974,45 +951,45 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
   Widget _buildWarrantySummaryCard({
     required String title,
-    required String subtitle,
     required String count,
     required IconData icon,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.primary.withValues(alpha: 0.25), width: 1.4),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.22), width: 1.2),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+              color: AppColors.primary.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(7),
+              padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: AppColors.primary, size: 16),
+              child: Icon(icon, color: AppColors.primary, size: 15),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
               count,
               style: AppTypography.headlineMd.copyWith(
                 fontWeight: FontWeight.w900,
-                fontSize: 19,
+                fontSize: 18,
                 color: AppColors.primary,
               ),
             ),
@@ -1021,20 +998,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               title,
               style: AppTypography.labelMd.copyWith(
                 fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
+                letterSpacing: 0.2,
                 fontSize: 10.5,
                 color: AppColors.primary,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 1),
-            Text(
-              subtitle,
-              style: AppTypography.caption.copyWith(
-                fontSize: 9.5,
-                color: Colors.black54,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,

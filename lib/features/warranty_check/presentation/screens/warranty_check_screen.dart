@@ -473,11 +473,6 @@ Pivot Bearings India''';
                                   'WARRANTY CHECK',
                                   style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.bold),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'INSTANT EXPIRY COUNTDOWN & CATEGORY AUDIT',
-                                  style: AppTypography.caption.copyWith(fontSize: 10, letterSpacing: 0.8),
-                                ),
                               ],
                             ),
                           ),
@@ -485,7 +480,7 @@ Pivot Bearings India''';
                       ),
                       const SizedBox(height: 16),
 
-                      // Separate Track In and Track Out Action Buttons
+                      // Track In and Track Out Action Buttons (Scan QR based)
                       Row(
                         children: [
                           Expanded(
@@ -576,80 +571,6 @@ Pivot Bearings India''';
                             fontWeight: FontWeight.w400,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Pill-Shaped Manual Input Field
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              height: 48,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(50),
-                              ),
-                              child: TextField(
-                                controller: _inputBearingCtrl,
-                                style: AppTypography.bodyMd,
-                                textCapitalization: TextCapitalization.characters,
-                                onSubmitted: _checkSpecificBearing,
-                                decoration: InputDecoration(
-                                  hintText: 'Bearing ID / Serial (e.g. PB-9402)',
-                                  hintStyle: AppTypography.bodyMd.copyWith(
-                                    color: AppColors.primary.withValues(alpha: 0.5),
-                                  ),
-                                  prefixIcon: const Icon(Icons.search, color: AppColors.primary, size: 20),
-                                  filled: true,
-                                  fillColor: AppColors.background,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(50),
-                                    borderSide: BorderSide(
-                                      color: AppColors.primary.withValues(alpha: 0.3),
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(50),
-                                    borderSide: BorderSide(
-                                      color: AppColors.primary.withValues(alpha: 0.3),
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(50),
-                                    borderSide: const BorderSide(
-                                      color: AppColors.primary,
-                                      width: 2.0,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            height: 48,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: AppColors.background,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                              ),
-                              onPressed: _isCheckingSpecific
-                                  ? null
-                                  : () => _checkSpecificBearing(_inputBearingCtrl.text),
-                              child: _isCheckingSpecific
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.background),
-                                    )
-                                  : const Text('CHECK', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
@@ -901,6 +822,33 @@ Pivot Bearings India''';
     );
   }
 
+  Widget _miniChip(String label, {bool filled = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: filled
+            ? AppColors.primary.withValues(alpha: 0.1)
+            : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(
+          color: filled
+              ? AppColors.primary.withValues(alpha: 0.25)
+              : const Color(0xFFE5E7EB),
+          width: 0.8,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: filled ? AppColors.primary : Colors.black54,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
   Widget _buildWarrantyItemCard(BearingModel item) {
     final daysLeft = item.daysLeftToExpiry;
     final isExpired = item.isWarrantyExpired;
@@ -933,197 +881,97 @@ Pivot Bearings India''';
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isExpired
-              ? const Color(0xFFEF4444).withValues(alpha: 0.4)
-              : AppColors.primary.withValues(alpha: 0.2),
-          width: 1.5,
+              ? const Color(0xFFEF4444).withValues(alpha: 0.25)
+              : AppColors.primary.withValues(alpha: 0.12),
+          width: 1.2,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
       child: InkWell(
         onTap: () => _showWarrantyDiagnosticModal(item, null),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Row: Bearing ID & Warranty Days Pill Badge
+              // Row 1: Bearing ID + Days badge
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  const Icon(Icons.qr_code_2_rounded, size: 17, color: AppColors.primary),
+                  const SizedBox(width: 7),
                   Expanded(
-                    child: Row(
-                      children: [
-                        const Icon(Icons.qr_code, size: 20, color: AppColors.primary),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            item.id,
-                            style: AppTypography.headlineSm.copyWith(fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      item.id,
+                      style: AppTypography.labelMd.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 8),
-
-                  // Prominent Days Left Pill
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: badgeBg,
-                      borderRadius: BorderRadius.circular(50),
-                      border: Border.all(color: badgeText.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isExpired
-                              ? Icons.warning_amber
-                              : (daysLeft != null && daysLeft <= 30 ? Icons.timer : Icons.shield),
-                          size: 13,
-                          color: badgeText,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          daysLabel,
-                          style: TextStyle(
-                            color: badgeText,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              // Bearing Category Chip, Model & Status Badge (Responsive Wrap: zero overlap on any screen)
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppColors.primary,
+                      color: badgeBg,
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Text(
-                      item.category.toUpperCase(),
-                      style: const TextStyle(
-                        color: AppColors.background,
+                      daysLabel,
+                      style: TextStyle(
+                        color: badgeText,
                         fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(50),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
-                    ),
-                    child: Text(
-                      item.modelNumber,
-                      style: AppTypography.caption.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
                         fontSize: 10.5,
                       ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Row 2: Category chip + Model chip + State badge
+              Wrap(
+                spacing: 6,
+                runSpacing: 5,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _miniChip(item.category.toUpperCase(), filled: true),
+                  _miniChip(item.modelNumber),
                   IndustrialStatusBadge(statusText: item.stateDisplayString),
                 ],
               ),
-              const Divider(height: 20),
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: Color(0xFFE5E7EB)),
+              const SizedBox(height: 10),
 
-              // Bottom Details Row: Expiry Date & Coverage (Responsive Wrap)
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
+              // Row 3: Expiry + Actions
+              Row(
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.calendar_today, size: 14, color: AppColors.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        item.warrantyExpiryDate != null
-                            ? 'Expires: ${item.warrantyExpiryDate!.toLocal().toString().split(' ').first}'
-                            : 'Coverage: ${item.warrantyDurationMonths} Months',
-                        style: AppTypography.caption.copyWith(fontWeight: FontWeight.w600),
+                  const Icon(Icons.calendar_today_outlined, size: 13, color: Colors.black38),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      item.warrantyExpiryDate != null
+                          ? 'Expires: ${item.warrantyExpiryDate!.toLocal().toString().split(' ').first}'
+                          : 'Coverage: ${item.warrantyDurationMonths} Months',
+                      style: AppTypography.caption.copyWith(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
+                    ),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (item.state == BearingLifecycleState.currentlyIn) ...[
-                        InkWell(
-                          onTap: () {
-                            Navigator.pushNamed(
-                              context,
-                              AppRoutes.outConfirmation,
-                              arguments: item.id,
-                            ).then((_) => _loadUserBearings());
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFDC2626),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.logout_rounded, size: 12, color: Colors.white),
-                                SizedBox(width: 4),
-                                Text(
-                                  'TRACK OUT',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                      Text(
-                        'CHECK DETAILS',
-                        style: AppTypography.labelMd.copyWith(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right, size: 16, color: AppColors.primary),
-                    ],
+                  Text(
+                    'DETAILS',
+                    style: AppTypography.caption.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
                   ),
+                  const Icon(Icons.chevron_right, size: 15, color: AppColors.primary),
                 ],
               ),
               if (item.isMarkedOutUnderWarranty) ...[
@@ -1152,7 +1000,7 @@ Pivot Bearings India''';
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFFCA5A5).withValues(alpha: 0.6)),
                   ),
                   child: Column(
@@ -1447,13 +1295,13 @@ Pivot Bearings India''';
               ),
               const SizedBox(height: 24),
 
-              // Bearing Out Action Button (Available directly in Warranty module)
+              // Bearing Out Action Button (Requires scanning physical QR code)
               if (bearing.state == BearingLifecycleState.currentlyIn) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
+                      backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1461,37 +1309,12 @@ Pivot Bearings India''';
                     ),
                     onPressed: () {
                       Navigator.pop(ctx);
-                      Navigator.pushNamed(
-                        context,
-                        AppRoutes.outConfirmation,
-                        arguments: bearing.id,
-                      ).then((_) => _loadUserBearings());
+                      Navigator.pushNamed(context, AppRoutes.qrScanner);
                     },
-                    icon: const Icon(Icons.logout_rounded, size: 18),
+                    icon: const Icon(Icons.qr_code_scanner, size: 18),
                     label: const Text(
-                      'TRACK OUT (WITH PROOF)',
+                      'SCAN QR TO TRACK OUT',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFDC2626),
-                      side: const BorderSide(color: Color(0xFFDC2626), width: 1.2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _markBearingOutAndOpenEmailDialog(bearing);
-                    },
-                    icon: const Icon(Icons.email_outlined, size: 16),
-                    label: const Text(
-                      'MARK OUT & EMAIL LIFECYCLE',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                   ),
                 ),
@@ -1738,6 +1561,19 @@ class _WarrantyQrScannerModalState extends State<_WarrantyQrScannerModal> {
                 children: [
                   MobileScanner(
                     controller: _controller,
+                    errorBuilder: (context, error) {
+                      final msg = error.errorDetails?.message ?? error.toString();
+                      if (msg.contains('already running') ||
+                          error.errorCode == MobileScannerErrorCode.controllerAlreadyInitialized) {
+                        return const SizedBox.shrink();
+                      }
+                      return Center(
+                        child: Text(
+                          'Initializing scanner...',
+                          style: AppTypography.bodySm.copyWith(color: Colors.white70),
+                        ),
+                      );
+                    },
                     onDetect: (capture) {
                       if (_hasDetected) return;
                       for (final barcode in capture.barcodes) {

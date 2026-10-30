@@ -413,7 +413,7 @@ class BearingTrackService {
 
       if (SupabaseService.isInitialized) {
         try {
-          final updatedRows = await SupabaseService.client
+          await SupabaseService.client
               .from('qr_codes')
               .update({
                 'current_lifecycle_state': 'CURRENTLY_IN',
@@ -421,24 +421,7 @@ class BearingTrackService {
                 'last_in_timestamp': now.toIso8601String(),
                 'updated_at': now.toIso8601String(),
               })
-              .or('bearing_id.eq.$bearingId,payload_value.eq.$cleanPayload')
-              .select('id');
-
-          if (updatedRows.isEmpty) {
-            // Upsert into qr_codes if not present so it shows up in admin QR registry immediately!
-            await SupabaseService.client.from('qr_codes').insert({
-              'bearing_id': bearingId,
-              'batch_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-              'assigned_warranty_plan_id': '22222222-2222-2222-2222-222222222222',
-              'model_number': model,
-              'payload_value': cleanPayload,
-              'payload_hash': 'SHA-256: VALID',
-              'current_lifecycle_state': 'CURRENTLY_IN',
-              'first_in_timestamp': now.toIso8601String(),
-              'last_in_timestamp': now.toIso8601String(),
-              'is_flagged': false,
-            });
-          }
+              .or('bearing_id.eq.$bearingId,payload_value.eq.$cleanPayload');
         } catch (e) {
           debugPrint('Notice: localTrackScan BEARING_IN update qr_codes error: $e');
         }
@@ -525,12 +508,17 @@ class BearingTrackService {
           final m = Map<String, dynamic>.from(row as Map);
           final bid = m['bearing_id']?.toString() ?? '';
           if (bid.isEmpty) continue;
+          final rawModel = m['model_number']?.toString() ?? 'PBI-MODEL';
+          if (bid.toUpperCase().contains('XYZ') || rawModel.toUpperCase() == 'XYZ') continue;
           final batch = (m['qr_batches'] as Map<String, dynamic>?)?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
-          final inDt = DateTime.tryParse(m['last_in_timestamp']?.toString() ?? m['first_in_timestamp']?.toString() ?? '') ?? DateTime.now();
+          final rawInTs = m['last_in_timestamp']?.toString() ?? m['first_in_timestamp']?.toString();
+          if (rawInTs == null || rawInTs.trim().isEmpty) continue;
+          final inDt = DateTime.tryParse(rawInTs);
+          if (inDt == null) continue;
 
           items.add(BearingHistoryItem(
             bearingId: bid,
-            modelNumber: m['model_number']?.toString() ?? 'PBI-MODEL',
+            modelNumber: rawModel,
             batchCode: batch,
             inTimestamp: inDt,
             isOut: false,
@@ -548,16 +536,39 @@ class BearingTrackService {
       final trackedIds = prefs.getStringList('pbi_tracked_bearings_list') ?? [];
       await QrManagementRepository.loadFromLocalStorage();
 
+      // Sanitize trackedIds to purge any legacy mock XYZ IDs
+      final sanitizedTrackedIds = <String>[];
+      bool hadMockIds = false;
       for (final id in trackedIds) {
+        if (id.toUpperCase().contains('XYZ')) {
+          hadMockIds = true;
+          prefs.remove('$_trackStatePrefix$id');
+          prefs.remove('pbi_bearing_state_$id');
+          prefs.remove('$_trackInTimePrefix$id');
+          prefs.remove('$_trackOutTimePrefix$id');
+          prefs.remove('$_trackHistoryPrefix$id');
+          prefs.remove('pbi_bearing_notes_$id');
+        } else {
+          sanitizedTrackedIds.add(id);
+        }
+      }
+      if (hadMockIds) {
+        await prefs.setStringList('pbi_tracked_bearings_list', sanitizedTrackedIds);
+      }
+
+      for (final id in sanitizedTrackedIds) {
         if (seen.contains(id.toUpperCase())) continue;
         final state = prefs.getString('$_trackStatePrefix$id') ?? prefs.getString('pbi_bearing_state_$id');
         if (state == 'IN' || state == 'CURRENTLY_IN') {
           final inStr = prefs.getString('$_trackInTimePrefix$id');
-          final inDt = inStr != null ? (DateTime.tryParse(inStr) ?? DateTime.now()) : DateTime.now();
+          if (inStr == null || inStr.trim().isEmpty) continue;
+          final inDt = DateTime.tryParse(inStr);
+          if (inDt == null) continue;
           final qr = QrManagementRepository.findQrRecord(id);
           final model = (qr?['model_number'] != null && qr?['model_number'] != 'PBI-6204-ZZ')
               ? qr!['model_number'].toString()
               : (ItemMasterRepository().findByCode('B1')?.itemCode ?? 'B1');
+          if (id.toUpperCase().contains('XYZ') || model.toUpperCase() == 'XYZ') continue;
           final batch = qr?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
           final notes = prefs.getString('pbi_bearing_notes_$id');
 
@@ -608,9 +619,15 @@ class BearingTrackService {
           final qr = m['qr_codes'] as Map<String, dynamic>?;
           final bid = qr?['bearing_id']?.toString() ?? '';
           if (bid.isEmpty) continue;
+          final modelNum = qr?['model_number']?.toString() ?? 'PBI-MODEL';
+          if (bid.toUpperCase().contains('XYZ') || modelNum.toUpperCase() == 'XYZ') continue;
           final batch = (qr?['qr_batches'] as Map<String, dynamic>?)?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
-          final inDt = DateTime.tryParse(m['in_timestamp']?.toString() ?? '') ?? DateTime.now().subtract(const Duration(hours: 1));
-          final outDt = DateTime.tryParse(m['out_timestamp']?.toString() ?? '') ?? DateTime.now();
+          final rawIn = m['in_timestamp']?.toString();
+          final rawOut = m['out_timestamp']?.toString();
+          if (rawIn == null || rawIn.trim().isEmpty || rawOut == null || rawOut.trim().isEmpty) continue;
+          final inDt = DateTime.tryParse(rawIn);
+          final outDt = DateTime.tryParse(rawOut);
+          if (inDt == null || outDt == null) continue;
           final dur = (m['operating_duration_seconds'] as num?)?.toInt() ?? outDt.difference(inDt).inSeconds;
           final note = m['notes']?.toString();
 
@@ -618,7 +635,7 @@ class BearingTrackService {
           if (!seenCycles.contains(key)) {
             items.add(BearingHistoryItem(
               bearingId: bid,
-              modelNumber: qr?['model_number']?.toString() ?? 'PBI-MODEL',
+              modelNumber: modelNum,
               batchCode: batch,
               inTimestamp: inDt,
               outTimestamp: outDt,
@@ -641,10 +658,12 @@ class BearingTrackService {
       await QrManagementRepository.loadFromLocalStorage();
 
       for (final id in trackedIds) {
+        if (id.toUpperCase().contains('XYZ')) continue;
         final qr = QrManagementRepository.findQrRecord(id);
         final model = (qr?['model_number'] != null && qr?['model_number'] != 'PBI-6204-ZZ')
             ? qr!['model_number'].toString()
             : (ItemMasterRepository().findByCode('B1')?.itemCode ?? 'B1');
+        if (model.toUpperCase() == 'XYZ') continue;
         final batch = qr?['batch_code']?.toString() ?? 'BATCH-ACTIVE';
 
         // Check cycle history list
@@ -654,8 +673,12 @@ class BearingTrackService {
             final decoded = jsonDecode(histJson) as List;
             for (final entry in decoded) {
               final em = Map<String, dynamic>.from(entry as Map);
-              final inDt = DateTime.tryParse(em['in_timestamp']?.toString() ?? '') ?? DateTime.now().subtract(const Duration(hours: 1));
-              final outDt = DateTime.tryParse(em['out_timestamp']?.toString() ?? '') ?? DateTime.now();
+              final rawIn = em['in_timestamp']?.toString();
+              final rawOut = em['out_timestamp']?.toString();
+              if (rawIn == null || rawIn.trim().isEmpty || rawOut == null || rawOut.trim().isEmpty) continue;
+              final inDt = DateTime.tryParse(rawIn);
+              final outDt = DateTime.tryParse(rawOut);
+              if (inDt == null || outDt == null) continue;
               final dur = (em['duration_seconds'] as num?)?.toInt() ?? outDt.difference(inDt).inSeconds;
               final note = em['notes']?.toString() ?? prefs.getString('pbi_bearing_notes_$id');
 
@@ -681,23 +704,25 @@ class BearingTrackService {
         final state = prefs.getString('$_trackStatePrefix$id') ?? prefs.getString('pbi_bearing_state_$id');
         if (state == _finalOutState || state == 'OUT' || state == 'CURRENTLY_OUT') {
           final outStr = prefs.getString('$_trackOutTimePrefix$id');
-          if (outStr != null) {
-            final outDt = DateTime.tryParse(outStr) ?? DateTime.now();
-            final inStr = prefs.getString('$_trackInTimePrefix$id');
-            final inDt = inStr != null ? (DateTime.tryParse(inStr) ?? outDt.subtract(const Duration(hours: 1))) : outDt.subtract(const Duration(hours: 1));
-            final key = '$id-${outDt.millisecondsSinceEpoch}';
-            if (!seenCycles.contains(key)) {
-              items.add(BearingHistoryItem(
-                bearingId: id,
-                modelNumber: model,
-                batchCode: batch,
-                inTimestamp: inDt,
-                outTimestamp: outDt,
-                durationSeconds: outDt.difference(inDt).inSeconds,
-                notes: prefs.getString('pbi_bearing_notes_$id'),
-                isOut: true,
-              ));
-              seenCycles.add(key);
+          final inStr = prefs.getString('$_trackInTimePrefix$id');
+          if (outStr != null && inStr != null) {
+            final outDt = DateTime.tryParse(outStr);
+            final inDt = DateTime.tryParse(inStr);
+            if (outDt != null && inDt != null) {
+              final key = '$id-${outDt.millisecondsSinceEpoch}';
+              if (!seenCycles.contains(key)) {
+                items.add(BearingHistoryItem(
+                  bearingId: id,
+                  modelNumber: model,
+                  batchCode: batch,
+                  inTimestamp: inDt,
+                  outTimestamp: outDt,
+                  durationSeconds: outDt.difference(inDt).inSeconds,
+                  notes: prefs.getString('pbi_bearing_notes_$id'),
+                  isOut: true,
+                ));
+                seenCycles.add(key);
+              }
             }
           }
         }

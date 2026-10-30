@@ -122,7 +122,7 @@ class _QrInventoryScreenState extends State<QrInventoryScreen> {
     final batchCode = file['batch_code']?.toString() ?? 'BATCH';
     final List<dynamic> qrValues = (file['qr_values'] as List<dynamic>?) ?? [];
     final DateTime createdAt = file['created_at'] is DateTime
-        ? file['created_at'] as DateTime
+        ? (file['created_at'] as DateTime).toLocal()
         : DateTime.now();
 
     if (qrValues.isEmpty) {
@@ -229,7 +229,7 @@ class _QrInventoryScreenState extends State<QrInventoryScreen> {
     final batchCode = file['batch_code']?.toString() ?? 'BATCH';
     final List<dynamic> qrValues = (file['qr_values'] as List<dynamic>?) ?? [];
     final DateTime createdAt = file['created_at'] is DateTime
-        ? file['created_at'] as DateTime
+        ? (file['created_at'] as DateTime).toLocal()
         : DateTime.now();
     final modelNumber = file['model_number']?.toString() ?? 'PBI-6204-ZZ';
 
@@ -706,7 +706,7 @@ class _QrInventoryScreenState extends State<QrInventoryScreen> {
               final batchCode = row['batch_code'].toString();
               final isSelected = _selectedBatchCodes.contains(batchCode);
               final DateTime createdAt = row['created_at'] is DateTime
-                  ? row['created_at'] as DateTime
+                  ? (row['created_at'] as DateTime).toLocal()
                   : DateTime.now();
               final count = (row['total_quantity'] as num?)?.toInt() ?? (row['qr_values'] as List?)?.length ?? 0;
               final model = row['model_number']?.toString() ?? 'PBI-6204-ZZ';
@@ -854,7 +854,7 @@ class _QrInventoryScreenState extends State<QrInventoryScreen> {
         final batchCode = row['batch_code'].toString();
         final isSelected = _selectedBatchCodes.contains(batchCode);
         final DateTime createdAt = row['created_at'] is DateTime
-            ? row['created_at'] as DateTime
+            ? (row['created_at'] as DateTime).toLocal()
             : DateTime.now();
         final count = (row['total_quantity'] as num?)?.toInt() ?? (row['qr_values'] as List?)?.length ?? 0;
         final model = row['model_number']?.toString() ?? 'PBI-6204-ZZ';

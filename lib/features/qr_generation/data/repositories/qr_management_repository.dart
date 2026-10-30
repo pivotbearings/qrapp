@@ -235,58 +235,7 @@ class QrManagementRepository {
           }
         }
       }
-      _syncPendingQrsToSupabase();
-    } catch (_) {}
-  }
-
-  /// Automatically synchronizes local bearing records to Supabase cloud database
-  static Future<void> _syncPendingQrsToSupabase() async {
-    if (!SupabaseService.isInitialized || _inMemoryQrCodes.isEmpty) return;
-    try {
-      if (SupabaseService.client.auth.currentSession == null) {
-        try {
-          await SupabaseService.client.auth.signInWithPassword(
-            email: 'test_dev_1@gmail.com',
-            password: 'Password123!',
-          );
-        } catch (_) {}
-      }
-
-      final validRecords = _inMemoryQrCodes.where((q) {
-        final id = q['bearing_id']?.toString() ?? '';
-        return BearingEncryptionKeyService.isValidKeyOrId(id);
-      }).toList();
-
-      if (validRecords.isEmpty) return;
-
-      const defaultBatchId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-
-      final rowsToInsert = validRecords.map((q) {
-        final id = q['bearing_id'].toString();
-        final dur = (q['duration_months'] as num?)?.toInt() ?? 12;
-        final planId = q['warranty_plan_id']?.toString() ??
-            _standardPlanIds[dur] ??
-            '33333333-3333-3333-3333-333333333333';
-        final model = (q['model_number'] != null &&
-                q['model_number'].toString().isNotEmpty &&
-                q['model_number'] != 'PBI-6204-ZZ')
-            ? q['model_number'].toString()
-            : 'B1';
-        return {
-          'bearing_id': id,
-          'batch_id': defaultBatchId,
-          'model_number': model,
-          'payload_value': id,
-          'payload_hash': 'SHA-256: VALID',
-          'assigned_warranty_plan_id': planId,
-          'current_lifecycle_state': q['current_lifecycle_state'] ?? 'NOT_ACTIVATED',
-          'is_flagged': false,
-        };
-      }).toList();
-
-      await SupabaseService.client
-          .from('qr_codes')
-          .upsert(rowsToInsert, onConflict: 'bearing_id');
+      // Note: QR records are generated authoritatively via QrManagementRepository.generateQRs
     } catch (_) {}
   }
 

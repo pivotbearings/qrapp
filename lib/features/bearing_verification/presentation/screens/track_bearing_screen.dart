@@ -27,6 +27,76 @@ enum TrackViewStep {
   result,
 }
 
+String _formatLiveOperatingDuration(DateTime? inTimestamp) {
+  if (inTimestamp == null) return '0 Secs';
+  final now = DateTime.now();
+  final inLocal = inTimestamp.toLocal();
+  final totalSec = now.difference(inLocal).inSeconds;
+  if (totalSec < 0) return '0 Secs';
+
+  final days = totalSec ~/ 86400;
+  final hours = (totalSec % 86400) ~/ 3600;
+  final mins = (totalSec % 3600) ~/ 60;
+  final sec = totalSec % 60;
+
+  if (days > 0) {
+    if (hours > 0) {
+      return '$days ${days == 1 ? "Day" : "Days"}, $hours ${hours == 1 ? "Hour" : "Hours"}, $mins ${mins == 1 ? "Min" : "Mins"}';
+    }
+    return '$days ${days == 1 ? "Day" : "Days"}, $mins ${mins == 1 ? "Min" : "Mins"}';
+  } else if (hours > 0) {
+    return '$hours ${hours == 1 ? "Hour" : "Hours"}, $mins ${mins == 1 ? "Min" : "Mins"}, $sec ${sec == 1 ? "Sec" : "Secs"}';
+  } else if (mins > 0) {
+    return '$mins ${mins == 1 ? "Min" : "Mins"}, $sec ${sec == 1 ? "Sec" : "Secs"}';
+  } else {
+    return '$sec ${sec == 1 ? "Sec" : "Secs"}';
+  }
+}
+
+class _LiveDurationText extends StatefulWidget {
+  final DateTime? inTimestamp;
+  final TextStyle? style;
+  final TextAlign textAlign;
+  final String prefix;
+
+  const _LiveDurationText({
+    required this.inTimestamp,
+    this.style,
+    this.textAlign = TextAlign.end,
+    this.prefix = '',
+  });
+
+  @override
+  State<_LiveDurationText> createState() => _LiveDurationTextState();
+}
+
+class _LiveDurationTextState extends State<_LiveDurationText> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '${widget.prefix}${_formatLiveOperatingDuration(widget.inTimestamp)}',
+      textAlign: widget.textAlign,
+      style: widget.style,
+    );
+  }
+}
+
 /// Pivot Bearings India - Track Your Bearing Page
 ///
 /// Streamlined QR-Only Bearing IN and Bearing OUT Lifecycle Tracker:
@@ -65,7 +135,12 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   int _selectedLandingTab = 0; // 0: Track, 1: Product In, 2: Product Out
+  List<BearingHistoryItem>? _productInItems;
+  bool _isLoadingProductIn = false;
   int _productInPage = 0;
+
+  List<BearingHistoryItem>? _productOutItems;
+  bool _isLoadingProductOut = false;
   int _productOutPage = 0;
   static const int _pageSize = 10;
 
@@ -80,31 +155,48 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   static const Color _redTextDark = Color(0xFFB71C1C);
 
   final DateFormat _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
-  Timer? _liveTicker;
 
-  String _formatLiveOperatingDuration(DateTime? inTimestamp) {
-    if (inTimestamp == null) return '0 Secs';
-    final now = DateTime.now();
-    final inLocal = inTimestamp.toLocal();
-    final totalSec = now.difference(inLocal).inSeconds;
-    if (totalSec < 0) return '0 Secs';
-
-    final days = totalSec ~/ 86400;
-    final hours = (totalSec % 86400) ~/ 3600;
-    final mins = (totalSec % 3600) ~/ 60;
-    final sec = totalSec % 60;
-
-    if (days > 0) {
-      if (hours > 0) {
-        return '$days ${days == 1 ? "Day" : "Days"}, $hours ${hours == 1 ? "Hour" : "Hours"}, $mins ${mins == 1 ? "Min" : "Mins"}';
+  Future<void> _loadProductInData({bool force = false}) async {
+    if (_isLoadingProductIn) return;
+    if (!force && _productInItems != null) return;
+    setState(() => _isLoadingProductIn = true);
+    try {
+      final items = await BearingTrackService.fetchTrackInHistory();
+      if (mounted) {
+        setState(() {
+          _productInItems = items;
+          _isLoadingProductIn = false;
+        });
       }
-      return '$days ${days == 1 ? "Day" : "Days"}, $mins ${mins == 1 ? "Min" : "Mins"}';
-    } else if (hours > 0) {
-      return '$hours ${hours == 1 ? "Hour" : "Hours"}, $mins ${mins == 1 ? "Min" : "Mins"}, $sec ${sec == 1 ? "Sec" : "Secs"}';
-    } else if (mins > 0) {
-      return '$mins ${mins == 1 ? "Min" : "Mins"}, $sec ${sec == 1 ? "Sec" : "Secs"}';
-    } else {
-      return '$sec ${sec == 1 ? "Sec" : "Secs"}';
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _productInItems ??= [];
+          _isLoadingProductIn = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadProductOutData({bool force = false}) async {
+    if (_isLoadingProductOut) return;
+    if (!force && _productOutItems != null) return;
+    setState(() => _isLoadingProductOut = true);
+    try {
+      final items = await BearingTrackService.fetchTrackOutHistory();
+      if (mounted) {
+        setState(() {
+          _productOutItems = items;
+          _isLoadingProductOut = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _productOutItems ??= [];
+          _isLoadingProductOut = false;
+        });
+      }
     }
   }
 
@@ -114,12 +206,14 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     WidgetsBinding.instance.addObserver(this);
     _checkInitialFraudLock();
 
-    _liveTicker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-
     if (widget.initialTabIndex != null && widget.initialTabIndex! >= 0 && widget.initialTabIndex! <= 2) {
       _selectedLandingTab = widget.initialTabIndex!;
+    }
+
+    if (_selectedLandingTab == 1) {
+      _loadProductInData();
+    } else if (_selectedLandingTab == 2) {
+      _loadProductOutData();
     }
 
     _laserAnimController = AnimationController(
@@ -171,7 +265,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 
   @override
   void dispose() {
-    _liveTicker?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _laserAnimController.dispose();
     _scannerController?.dispose();
@@ -267,7 +360,9 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           _currentStep = TrackViewStep.result;
         });
 
-        // No auto-dialog for Track module — clean simple result only
+        // Silently refresh in-memory history cache so tab switching has up-to-date entries
+        _loadProductInData(force: true);
+        _loadProductOutData(force: true);
       }
     } catch (e) {
       final fraudCheck = await AntiFraudService.recordInvalidScan(
@@ -663,7 +758,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withAlpha(10),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -688,9 +783,16 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     return Expanded(
       child: GestureDetector(
         onTap: () {
-          setState(() {
-            _selectedLandingTab = index;
-          });
+          if (_selectedLandingTab != index) {
+            setState(() {
+              _selectedLandingTab = index;
+            });
+            if (index == 1) {
+              _loadProductInData();
+            } else if (index == 2) {
+              _loadProductOutData();
+            }
+          }
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -724,68 +826,71 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Widget _buildProductInTabContent() {
-    return FutureBuilder<List<BearingHistoryItem>>(
-      future: BearingTrackService.fetchTrackInHistory(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final items = snapshot.data ?? [];
-        if (items.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.inventory_2_outlined, size: 54, color: Colors.grey[400]),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No Bearings Currently In Machine',
-                    style: AppTypography.headlineSm.copyWith(
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.bold,
+    if (_isLoadingProductIn && _productInItems == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final items = _productInItems ?? [];
+    if (items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => _loadProductInData(force: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 60),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.inventory_2_outlined, size: 54, color: Colors.grey[400]),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No Bearings Currently In Machine',
+                      style: AppTypography.headlineSm.copyWith(
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Scan or enter a bearing QR code to mark it as Bearing In.',
-                    style: AppTypography.caption.copyWith(color: Colors.grey[600]),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      'Scan or enter a bearing QR code to mark it as Bearing In.',
+                      style: AppTypography.caption.copyWith(color: Colors.grey[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ),
-          );
-        }
+          ],
+        ),
+      );
+    }
 
-        final totalCount = items.length;
-        final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
-        final safePage = _productInPage.clamp(0, totalPages - 1);
-        final pagedItems = items.skip(safePage * _pageSize).take(_pageSize).toList();
+    final totalCount = items.length;
+    final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
+    final safePage = _productInPage.clamp(0, totalPages - 1);
+    final pagedItems = items.skip(safePage * _pageSize).take(_pageSize).toList();
 
-        return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {});
-          },
-          child: ListView(
-            padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-            children: [
-              ...pagedItems.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildProductInCard(item),
-                  )),
-              _buildPaginationControls(
-                currentPage: safePage,
-                totalCount: totalCount,
-                pageSize: _pageSize,
-                itemName: 'Bearings In',
-                onPageChanged: (newPage) => setState(() => _productInPage = newPage),
-              ),
-            ],
+    return RefreshIndicator(
+      onRefresh: () => _loadProductInData(force: true),
+      child: ListView(
+        padding: const EdgeInsets.all(AppDimensions.gutterMobile),
+        children: [
+          ...pagedItems.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildProductInCard(item),
+              )),
+          _buildPaginationControls(
+            currentPage: safePage,
+            totalCount: totalCount,
+            pageSize: _pageSize,
+            itemName: 'Bearings In',
+            onPageChanged: (newPage) => setState(() => _productInPage = newPage),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -796,20 +901,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     required String itemName,
     required ValueChanged<int> onPageChanged,
   }) {
-    if (totalCount <= pageSize) {
-      if (totalCount > 0) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12.0),
-          child: Center(
-            child: Text(
-              'Showing all $totalCount $itemName',
-              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
-            ),
-          ),
-        );
-      }
-      return const SizedBox.shrink();
-    }
+    if (totalCount == 0) return const SizedBox.shrink();
 
     final totalPages = (totalCount / pageSize).ceil().clamp(1, 9999);
     final startIndex = currentPage * pageSize + 1;
@@ -827,7 +919,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Showing $startIndex–$endIndex of $totalCount',
+            'Showing $startIndex–$endIndex of $totalCount (10 per page)',
             style: const TextStyle(
               color: AppColors.primary,
               fontSize: 11,
@@ -842,7 +934,10 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 tooltip: 'Previous Page',
-                icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+                icon: Icon(
+                  Icons.chevron_left,
+                  color: currentPage > 0 ? AppColors.primary : Colors.grey[400],
+                ),
                 onPressed: (currentPage > 0)
                     ? () => onPageChanged(currentPage - 1)
                     : null,
@@ -869,7 +964,10 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 tooltip: 'Next Page',
-                icon: const Icon(Icons.chevron_right, color: AppColors.primary),
+                icon: Icon(
+                  Icons.chevron_right,
+                  color: (currentPage + 1 < totalPages) ? AppColors.primary : Colors.grey[400],
+                ),
                 onPressed: (currentPage + 1 < totalPages)
                     ? () => onPageChanged(currentPage + 1)
                     : null,
@@ -890,7 +988,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         border: Border.all(color: Colors.black12, width: 1.0),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withAlpha(5),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -925,7 +1023,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 decoration: BoxDecoration(
                   color: _greenBackground,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: _greenBorder.withOpacity(0.4)),
+                  border: Border.all(color: _greenBorder.withAlpha(100)),
                 ),
                 child: Text(
                   'Active In Machine',
@@ -947,7 +1045,14 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           ),
           _buildSpecRow(
             'Operating Duration So Far',
-            _formatLiveOperatingDuration(item.inTimestamp),
+            '',
+            customValue: _LiveDurationText(
+              inTimestamp: item.inTimestamp,
+              style: AppTypography.bodySm.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+              ),
+            ),
             isHighlighted: true,
           ),
           if (item.notes != null && item.notes!.trim().isNotEmpty)
@@ -979,68 +1084,71 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Widget _buildProductOutTabContent() {
-    return FutureBuilder<List<BearingHistoryItem>>(
-      future: BearingTrackService.fetchTrackOutHistory(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final items = snapshot.data ?? [];
-        if (items.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.history_rounded, size: 54, color: Colors.grey[400]),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No Tracked Out Bearings',
-                    style: AppTypography.headlineSm.copyWith(
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.bold,
+    if (_isLoadingProductOut && _productOutItems == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final items = _productOutItems ?? [];
+    if (items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => _loadProductOutData(force: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 60),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.history_rounded, size: 54, color: Colors.grey[400]),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No Tracked Out Bearings',
+                      style: AppTypography.headlineSm.copyWith(
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Bearings that have been marked out will appear here with full duration history.',
-                    style: AppTypography.caption.copyWith(color: Colors.grey[600]),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      'Bearings that have been marked out will appear here with full duration history.',
+                      style: AppTypography.caption.copyWith(color: Colors.grey[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ),
-          );
-        }
+          ],
+        ),
+      );
+    }
 
-        final totalCount = items.length;
-        final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
-        final safePage = _productOutPage.clamp(0, totalPages - 1);
-        final pagedItems = items.skip(safePage * _pageSize).take(_pageSize).toList();
+    final totalCount = items.length;
+    final totalPages = (totalCount / _pageSize).ceil().clamp(1, 9999);
+    final safePage = _productOutPage.clamp(0, totalPages - 1);
+    final pagedItems = items.skip(safePage * _pageSize).take(_pageSize).toList();
 
-        return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {});
-          },
-          child: ListView(
-            padding: const EdgeInsets.all(AppDimensions.gutterMobile),
-            children: [
-              ...pagedItems.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildProductOutCard(item),
-                  )),
-              _buildPaginationControls(
-                currentPage: safePage,
-                totalCount: totalCount,
-                pageSize: _pageSize,
-                itemName: 'Bearings Out',
-                onPageChanged: (newPage) => setState(() => _productOutPage = newPage),
-              ),
-            ],
+    return RefreshIndicator(
+      onRefresh: () => _loadProductOutData(force: true),
+      child: ListView(
+        padding: const EdgeInsets.all(AppDimensions.gutterMobile),
+        children: [
+          ...pagedItems.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildProductOutCard(item),
+              )),
+          _buildPaginationControls(
+            currentPage: safePage,
+            totalCount: totalCount,
+            pageSize: _pageSize,
+            itemName: 'Bearings Out',
+            onPageChanged: (newPage) => setState(() => _productOutPage = newPage),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -1058,7 +1166,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         border: Border.all(color: Colors.black12, width: 1.0),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withAlpha(5),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -1093,7 +1201,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 decoration: BoxDecoration(
                   color: _redBackground,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: _redBorder.withOpacity(0.4)),
+                  border: Border.all(color: _redBorder.withAlpha(100)),
                 ),
                 child: Text(
                   'Tracked Out',
@@ -1309,26 +1417,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   ],
                 ),
               ),
-            ),
-          ),
-
-          const SizedBox(height: AppDimensions.spaceSm),
-
-          // Secondary CTA: Enter Serial Manually
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary, width: 1.4),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(50),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            onPressed: _showManualEntryDialog,
-            icon: const Icon(Icons.keyboard_alt_outlined, size: 20),
-            label: Text(
-              'Enter Bearing Serial Manually',
-              style: AppTypography.labelMd.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
 
@@ -1689,25 +1777,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                   icon: const Icon(Icons.flip_camera_ios_rounded, color: AppColors.primary),
                   tooltip: 'Switch Camera',
                 ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.background,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: _showManualEntryDialog,
-                  icon: const Icon(Icons.keyboard_alt_outlined, size: 18),
-                  label: const Text(
-                    'Manual Entry',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -1768,6 +1837,19 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     return MobileScanner(
       controller: _scannerController!,
       onDetect: _onBarcodeDetected,
+      errorBuilder: (context, error) {
+        final msg = error.errorDetails?.message ?? error.toString();
+        if (msg.contains('already running') ||
+            error.errorCode == MobileScannerErrorCode.controllerAlreadyInitialized) {
+          return const SizedBox.shrink();
+        }
+        return Center(
+          child: Text(
+            'Initializing camera...',
+            style: AppTypography.bodySm.copyWith(color: Colors.white70),
+          ),
+        );
+      },
     );
   }
 
@@ -1787,14 +1869,16 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              'Please allow camera permission to scan bearing QR codes, or track by typing the serial number manually.',
+              'Please allow camera permission in your browser or device settings to scan bearing QR codes.',
               style: AppTypography.bodySm,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
             IndustrialButton(
-              label: 'ENTER SERIAL MANUALLY',
-              onPressed: _showManualEntryDialog,
+              label: 'REQUEST CAMERA ACCESS',
+              onPressed: () {
+                _initScanner();
+              },
             ),
           ],
         ),
@@ -1967,8 +2051,10 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Live Operating Duration: ${_formatLiveOperatingDuration(result.inTimestamp)}',
+                      _LiveDurationText(
+                        inTimestamp: result.inTimestamp,
+                        prefix: 'Live Operating Duration: ',
+                        textAlign: TextAlign.start,
                         style: const TextStyle(
                           color: _greenTextDark,
                           fontWeight: FontWeight.bold,
@@ -2037,7 +2123,14 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 _buildSpecRow('Bearing In Date & Time', inTimeFormatted, isSuccess: true),
                 _buildSpecRow(
                   'Operating Duration So Far',
-                  _formatLiveOperatingDuration(result.inTimestamp),
+                  '',
+                  customValue: _LiveDurationText(
+                    inTimestamp: result.inTimestamp,
+                    style: AppTypography.bodySm.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                   isHighlighted: true,
                 ),
                 Builder(
@@ -2886,6 +2979,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   Widget _buildSpecRow(
     String label,
     String value, {
+    Widget? customValue,
     bool isHighlighted = false,
     bool isSuccess = false,
     bool isDanger = false,
@@ -2914,16 +3008,17 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
           const SizedBox(width: 8),
           Expanded(
             flex: 6,
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: AppTypography.bodySm.copyWith(
-                fontWeight: (isHighlighted || isSuccess || isDanger)
-                    ? FontWeight.w800
-                    : FontWeight.w600,
-                color: valColor,
-              ),
-            ),
+            child: customValue ??
+                Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.bodySm.copyWith(
+                    fontWeight: (isHighlighted || isSuccess || isDanger)
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                    color: valColor,
+                  ),
+                ),
           ),
         ],
       ),

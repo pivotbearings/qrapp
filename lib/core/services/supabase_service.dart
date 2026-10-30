@@ -1255,7 +1255,7 @@ class AdBannerConfig {
       targetUrl: 'https://www.pivotbearingsindia.com/',
       isActive: true,
       format: 'webp',
-      fitMode: 'contain',
+      fitMode: 'cover',
     );
   }
 
@@ -1275,7 +1275,7 @@ class AdBannerConfig {
           ? json['is_active'] as bool
           : (json['isActive'] is bool ? json['isActive'] as bool : true),
       format: (json['format'] ?? 'webp').toString(),
-      fitMode: (json['fit_mode'] ?? json['fitMode'] ?? 'contain').toString(),
+      fitMode: (json['fit_mode'] ?? json['fitMode'] ?? 'cover').toString(),
     );
   }
 

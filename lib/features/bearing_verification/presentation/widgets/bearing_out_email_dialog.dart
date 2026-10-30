@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
-import '../../../../core/services/lifecycle_email_service.dart';
 
 /// Clean, minimalist confirmation dialog summarising bearing lifecycle with direct Resend email delivery
 class BearingOutEmailDialog extends StatefulWidget {
@@ -73,52 +71,13 @@ class BearingOutEmailDialog extends StatefulWidget {
 }
 
 class _BearingOutEmailDialogState extends State<BearingOutEmailDialog> {
-  bool _isSending = false;
-  String? _successMessage;
-  String? _errorMessage;
-
   String _formatDateTime(DateTime? dt) {
     if (dt == null) return '—';
     return dt.toLocal().toString().split('.').first;
   }
 
-  Future<void> _handleSendEmail() async {
-    if (_isSending) return;
-
-    setState(() {
-      _isSending = true;
-      _errorMessage = null;
-      _successMessage = null;
-    });
-
-    final result = await LifecycleEmailService.sendBearingOutLifecycleEmail(
-      bearingId: widget.bearingId,
-      modelNumber: widget.modelNumber,
-      category: widget.category,
-      inDate: widget.inDate,
-      outDate: widget.outDate,
-      durationString: widget.durationString,
-      warrantyPlan: widget.warrantyPlan,
-      warrantyExpiry: widget.warrantyExpiry,
-      isUnderWarranty: widget.isUnderWarranty,
-      cycleRecords: widget.cycleRecords,
-    );
-
-    if (mounted) {
-      setState(() {
-        _isSending = false;
-        if (result.success) {
-          _successMessage = result.message;
-        } else {
-          _errorMessage = result.message;
-        }
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final signedInEmail = AuthController.instance.userEmail ?? 'Signed-in Account';
     final inTimeFormatted = _formatDateTime(widget.inDate);
     final outTimeFormatted = _formatDateTime(widget.outDate ?? DateTime.now());
 
@@ -261,102 +220,7 @@ class _BearingOutEmailDialogState extends State<BearingOutEmailDialog> {
                 ),
               ],
 
-              const SizedBox(height: 14),
-
-              // Recipient Indicator
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.primary.withAlpha(50), width: 1.0),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.mark_email_read_outlined, size: 16, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'RECIPIENT (YOUR SIGNED-IN ACCOUNT)',
-                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black54),
-                          ),
-                          Text(
-                            signedInEmail,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Success Banner
-              if (_successMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF86EFAC), width: 1.0),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _successMessage!,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Error Banner with Retry
-              if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFCA5A5), width: 1.0),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 18),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Email Dispatch Failed',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF991B1B)),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF7F1D1D)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
+              const SizedBox(height: 16),
 
               // Action Buttons
               Row(
@@ -373,9 +237,9 @@ class _BearingOutEmailDialogState extends State<BearingOutEmailDialog> {
                         Navigator.pop(context);
                         widget.onDismissed?.call();
                       },
-                      child: Text(
-                        _successMessage != null ? 'DONE' : 'CLOSE',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      child: const Text(
+                        'CLOSE',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                       ),
                     ),
                   ),

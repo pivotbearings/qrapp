@@ -1151,19 +1151,22 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
                     const SizedBox(height: 16),
 
                     // Active Toggle
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeThumbColor: AppColors.primary,
-                      title: const Text(
-                        'Reward Program Enabled',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    Material(
+                      color: Colors.transparent,
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        activeThumbColor: AppColors.primary,
+                        title: const Text(
+                          'Reward Program Enabled',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        subtitle: const Text(
+                          'Disable to temporarily pause points issuance and redemptions',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        value: _isSystemEnabled,
+                        onChanged: (v) => setState(() => _isSystemEnabled = v),
                       ),
-                      subtitle: const Text(
-                        'Disable to temporarily pause points issuance and redemptions',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      value: _isSystemEnabled,
-                      onChanged: (v) => setState(() => _isSystemEnabled = v),
                     ),
                   ],
                 ),

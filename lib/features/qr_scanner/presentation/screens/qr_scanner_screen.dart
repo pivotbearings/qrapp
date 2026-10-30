@@ -667,30 +667,24 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
             // Bottom Controls
             Container(
-              padding: const EdgeInsets.all(AppDimensions.gutterDesktop),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDimensions.gutterDesktop,
+                vertical: AppDimensions.spaceSm,
+              ),
               decoration: const BoxDecoration(
                 color: AppColors.background,
                 border: Border(top: BorderSide(color: AppColors.primary, width: 2.0)),
               ),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: _isFraudLocked ? null : _toggleTorch,
-                    icon: Icon(
-                      _isTorchOn ? Icons.flash_on : Icons.flash_off,
-                      color: _isFraudLocked ? Colors.grey : AppColors.primary,
-                    ),
-                    tooltip: 'Toggle Torch',
+              child: Center(
+                child: IconButton(
+                  onPressed: _isFraudLocked ? null : _toggleTorch,
+                  icon: Icon(
+                    _isTorchOn ? Icons.flash_on : Icons.flash_off,
+                    color: _isFraudLocked ? Colors.grey : AppColors.primary,
+                    size: 26,
                   ),
-                  const SizedBox(width: AppDimensions.spaceSm),
-                  Expanded(
-                    child: IndustrialButton.secondary(
-                      label: _isFraudLocked ? 'SCANNER LOCKED' : 'ENTER SERIAL MANUALLY',
-                      icon: _isFraudLocked ? Icons.lock : Icons.keyboard_alt_outlined,
-                      onPressed: _isFraudLocked ? null : _showManualEntryDialog,
-                    ),
-                  ),
-                ],
+                  tooltip: 'Toggle Torch',
+                ),
               ),
             ),
           ],
@@ -824,6 +818,19 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     return MobileScanner(
       controller: _scannerController,
       onDetect: _onBarcodeDetected,
+      errorBuilder: (context, error) {
+        final msg = error.errorDetails?.message ?? error.toString();
+        if (msg.contains('already running') ||
+            error.errorCode == MobileScannerErrorCode.controllerAlreadyInitialized) {
+          return const SizedBox.shrink();
+        }
+        return Center(
+          child: Text(
+            'Initializing camera...',
+            style: AppTypography.bodySm.copyWith(color: Colors.white70),
+          ),
+        );
+      },
     );
   }
 

@@ -35,7 +35,7 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
   final TextEditingController _adBannerLinkCtrl = TextEditingController();
   String _adBannerImage = 'assets/ad_banner.webp';
   bool _adBannerActive = true;
-  String _adBannerFitMode = 'contain';
+  String _adBannerFitMode = 'cover';
   bool _isAdBannerWebPValid = true;
   String? _uploadedFileName;
   String? _uploadedFileSizeKb;
@@ -236,7 +236,7 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
       _adBannerLinkCtrl.text = 'https://www.pivotbearingsindia.com/';
       _adBannerUrlCtrl.clear();
       _adBannerActive = true;
-      _adBannerFitMode = 'contain';
+      _adBannerFitMode = 'cover';
       _isAdBannerWebPValid = true;
       _uploadedFileName = 'Default Bundled WebP';
       _uploadedFileSizeKb = '60.3';
@@ -517,70 +517,32 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
     );
   }
 
-  /// Builds the rich Advertisement Banner configuration section with live simulator
+  /// Customer Advertisement section with clean mobile mockup preview
   Widget _buildAdBannerSection(bool isMobile) {
     return IndustrialCard(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header: Title + Active Toggle (Zero clutter, zero subtext)
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'CUSTOMER HOME ADVERTISEMENT BANNER',
-                          style: AppTypography.headlineSm,
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _isAdBannerWebPValid ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _isAdBannerWebPValid ? const Color(0xFF2E7D32) : const Color(0xFFEF6C00),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _isAdBannerWebPValid ? Icons.check_circle : Icons.warning_amber_rounded,
-                                size: 13,
-                                color: _isAdBannerWebPValid ? const Color(0xFF2E7D32) : const Color(0xFFEF6C00),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _isAdBannerWebPValid ? 'WEBP COMPLIANT' : 'FORMAT NOTICE',
-                                style: TextStyle(
-                                  color: _isAdBannerWebPValid ? const Color(0xFF2E7D32) : const Color(0xFFEF6C00),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'This advertisement is rendered prominently on customer home screens between metrics and the rewards wallet. WebP format ensures ultra-fast rendering and zero blur across all mobile displays.',
-                      style: AppTypography.bodySm,
-                    ),
-                  ],
-                ),
+              const Text(
+                'Customer Advertisement',
+                style: AppTypography.headlineSm,
               ),
               Row(
                 children: [
-                  const Text('Active', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(
+                    _adBannerActive ? 'Active' : 'Disabled',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: _adBannerActive ? AppColors.primary : Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Switch(
                     value: _adBannerActive,
                     activeThumbColor: AppColors.primary,
@@ -591,156 +553,91 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
             ],
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
-          // Interactive Device Preview & Simulator Section
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'DEVICE VISIBILITY & RESPONSIVENESS SIMULATOR',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    // Screen size toggle controls
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _buildSimDeviceBtn('compact', 'Compact Mobile (320px)'),
-                        _buildSimDeviceBtn('standard', 'Standard Phone (375px)'),
-                        _buildSimDeviceBtn('wide', 'Tablet / Wide (480px)'),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Live Simulator Screen
-                Center(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    width: _simulatedDevice == 'compact'
-                        ? 320
-                        : _simulatedDevice == 'wide'
-                            ? 480
-                            : 375,
-                    height: _simulatedDevice == 'compact'
-                        ? 152
-                        : _simulatedDevice == 'wide'
-                            ? 228
-                            : 178,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF001F59),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.primary, width: 2),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 10,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _buildAdPreviewImage(),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.launch_rounded, color: Colors.white, size: 10),
-                                SizedBox(width: 4),
-                                Text(
-                                  'FEATURED',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-                Center(
-                  child: Text(
-                    'Simulating ${_simulatedDevice.toUpperCase()} screen size (2.1:1 proper ratio) — banner is scaled via ${_adBannerFitMode.toUpperCase()} to prevent cutoff or distortion.',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54, fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Upload or Input controls
+          // Responsive 2-column on desktop, stacked on mobile
           LayoutBuilder(
             builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 700;
-              return Column(
+              final isWide = constraints.maxWidth >= 720;
+
+              // Left: Mobile Screen Preview (2:3 aspect ratio matching the customer home screen)
+              final previewWidget = Center(
+                child: Container(
+                  width: 250,
+                  height: 375, // 2:3 mobile ratio
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF001F59),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: AppColors.primary, width: 2.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 14,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildAdPreviewImage(),
+                      // Subtle phone notch pill at top
+                      Positioned(
+                        top: 8,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            width: 50,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+
+              // Right: Clean Controls
+              final controlsWidget = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Proper Dimension Notice Box
+                  // Dimension Pill
                   Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0F4FF),
+                      color: const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFC7D7FE), width: 1),
+                      border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
                     ),
                     child: const Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.aspect_ratio_rounded, size: 20, color: AppColors.primary),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'PROPER DIMENSIONS: 1200 x 570 px (~2.1:1 ratio) or 1200 x 600 px (2:1). Formats: WebP, PNG, JPG. Updates reflect on customer home screens live in real-time.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1E3A8A),
-                              height: 1.3,
-                            ),
+                        Icon(Icons.aspect_ratio_rounded, size: 16, color: Color(0xFF1D4ED8)),
+                        SizedBox(width: 8),
+                        Text(
+                          '1080 × 1620 px (2:3 Mobile) · WebP / PNG / JPG',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E40AF),
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  Row(
+                  const SizedBox(height: 14),
+
+                  // Upload & Reset buttons
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
                       ElevatedButton.icon(
                         icon: _isUploadingBanner
@@ -749,24 +646,23 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
                                 height: 16,
                                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                               )
-                            : const Icon(Icons.upload_file, size: 18),
-                        label: Text(_isUploadingBanner ? 'UPLOADING & BROADCASTING...' : 'UPLOAD IMAGE FILE'),
+                            : const Icon(Icons.upload_rounded, size: 18),
+                        label: Text(_isUploadingBanner ? 'Uploading...' : 'Upload Image'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                         onPressed: _isUploadingBanner ? null : _pickWebPFile,
                       ),
-                      const SizedBox(width: 12),
                       OutlinedButton.icon(
-                        icon: const Icon(Icons.restart_alt, size: 18),
-                        label: const Text('RESET TO DEFAULT WEBP BANNER'),
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('Reset Default'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary, width: 1.5),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          side: const BorderSide(color: AppColors.primary, width: 1.2),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                         onPressed: _resetAdBannerToDefault,
@@ -775,67 +671,24 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
                   ),
 
                   if (_uploadedFileName != null) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8EAF6),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.image, size: 18, color: AppColors.primary),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Active Asset: $_uploadedFileName ${_uploadedFileSizeKb != null ? '($_uploadedFileSizeKb KB)' : ''}',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary),
-                          ),
-                        ],
-                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$_uploadedFileName ${_uploadedFileSizeKb != null ? "($_uploadedFileSizeKb KB)" : ""}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54),
                     ),
                   ],
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
 
-                  // Image Fit Mode & Target URL
-                  if (isWide) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: IndustrialTextField(
-                            controller: _adBannerLinkCtrl,
-                            label: 'Tap Destination / Target Action URL',
-                            hintText: 'https://www.pivotbearingsindia.com/products',
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildFitModeSelector(),
-                        ),
-                      ],
-                    ),
-                  ] else ...[
-                    IndustrialTextField(
-                      controller: _adBannerLinkCtrl,
-                      label: 'Tap Destination / Target Action URL',
-                      hintText: 'https://www.pivotbearingsindia.com/products',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildFitModeSelector(),
-                  ],
-
-                  const SizedBox(height: 16),
-
-                  // Direct URL input (insert any image URL)
+                  // Image URL input + Apply button
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
                         child: IndustrialTextField(
                           controller: _adBannerUrlCtrl,
-                          label: 'Image URL (Insert Any Image URL — WebP, PNG, JPG, GIF)',
-                          hintText: 'https://domain.com/banner.webp or https://images.com/sample.png',
+                          label: 'Image URL',
+                          hintText: 'https://domain.com/banner.webp',
                           onChanged: (val) {
                             final trimmed = val.trim();
                             if (trimmed.startsWith('http://') ||
@@ -853,37 +706,71 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
                           onSubmitted: (val) => _applyUrlBanner(),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 2.0),
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.remove_red_eye, size: 16),
-                          label: const Text('PREVIEW URL'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary, width: 1.2),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                           onPressed: _applyUrlBanner,
+                          child: const Text('Apply', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
 
-                  // Save Banner Button
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: IndustrialButton(
-                      label: _isSavingBanner ? 'PUBLISHING...' : 'SAVE & PUBLISH BANNER',
-                      width: 240,
-                      isLoading: _isSavingBanner,
-                      icon: Icons.check_circle_outline,
-                      onPressed: _saveAdBannerOnly,
-                    ),
+                  // Target Link
+                  IndustrialTextField(
+                    controller: _adBannerLinkCtrl,
+                    label: 'Target Link (Optional)',
+                    hintText: 'https://www.pivotbearingsindia.com',
                   ),
+
+                  const SizedBox(height: 12),
+
+                  // Display Mode
+                  _buildFitModeSelector(),
+
+                  const SizedBox(height: 18),
+
+                  // Save & Publish
+                  IndustrialButton(
+                    label: _isSavingBanner ? 'Saving...' : 'Save & Publish',
+                    width: double.infinity,
+                    isLoading: _isSavingBanner,
+                    icon: Icons.check_circle_rounded,
+                    onPressed: _saveAdBannerOnly,
+                  ),
+                ],
+              );
+
+              if (isWide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 260,
+                      child: previewWidget,
+                    ),
+                    const SizedBox(width: 28),
+                    Expanded(
+                      child: controlsWidget,
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                children: [
+                  previewWidget,
+                  const SizedBox(height: 20),
+                  controlsWidget,
                 ],
               );
             },
@@ -893,59 +780,35 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
     );
   }
 
-  Widget _buildSimDeviceBtn(String deviceKey, String label) {
-    final isSelected = _simulatedDevice == deviceKey;
-    return InkWell(
-      onTap: () => setState(() => _simulatedDevice = deviceKey),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.white,
-          border: Border.all(color: AppColors.primary, width: 1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : AppColors.primary,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildFitModeSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'IMAGE DISPLAY SCALING MODE',
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+          'Display Mode',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
         ),
         const SizedBox(height: 6),
         Row(
           children: [
             Expanded(
               child: InkWell(
-                onTap: () => setState(() => _adBannerFitMode = 'contain'),
+                onTap: () => setState(() => _adBannerFitMode = 'cover'),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
                   decoration: BoxDecoration(
-                    color: _adBannerFitMode == 'contain' ? AppColors.primary : Colors.transparent,
+                    color: _adBannerFitMode == 'cover' ? AppColors.primary : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: AppColors.primary, width: 1.2),
                   ),
                   child: Center(
                     child: Text(
-                      'Contain (Full Graphic)',
+                      'Cover (Full Screen)',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: _adBannerFitMode == 'contain' ? Colors.white : AppColors.primary,
+                        color: _adBannerFitMode == 'cover' ? Colors.white : AppColors.primary,
                       ),
                     ),
                   ),
@@ -955,22 +818,22 @@ class _AdminSettingsViewState extends State<AdminSettingsView> {
             const SizedBox(width: 8),
             Expanded(
               child: InkWell(
-                onTap: () => setState(() => _adBannerFitMode = 'cover'),
+                onTap: () => setState(() => _adBannerFitMode = 'contain'),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
                   decoration: BoxDecoration(
-                    color: _adBannerFitMode == 'cover' ? AppColors.primary : Colors.transparent,
+                    color: _adBannerFitMode == 'contain' ? AppColors.primary : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: AppColors.primary, width: 1.2),
                   ),
                   child: Center(
                     child: Text(
-                      'Cover (Edge-to-Edge)',
+                      'Contain',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: _adBannerFitMode == 'cover' ? Colors.white : AppColors.primary,
+                        color: _adBannerFitMode == 'contain' ? Colors.white : AppColors.primary,
                       ),
                     ),
                   ),

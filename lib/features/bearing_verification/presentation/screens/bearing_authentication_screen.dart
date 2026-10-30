@@ -550,23 +550,7 @@ class _BearingAuthenticationScreenState
 
           const SizedBox(height: AppDimensions.spaceSm),
 
-          // Secondary CTA: Enter Serial Manually
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary, width: 1.4),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(50),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            onPressed: _showManualEntryDialog,
-            icon: const Icon(Icons.keyboard_alt_outlined, size: 20),
-            label: Text(
-              'Enter Bearing Serial Manually',
-              style: AppTypography.labelMd.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
+          // Secondary CTA removed per UX simplification
 
           const SizedBox(height: AppDimensions.spaceMd),
         ],
@@ -721,24 +705,33 @@ class _BearingAuthenticationScreenState
                     return Stack(
                       alignment: Alignment.center,
                       children: [
-                        // Viewfinder Box
+                        // Viewfinder Box with matching flush corner brackets
                         Container(
                           width: scanBoxSize,
                           height: scanBoxSize,
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 2.0),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5),
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withAlpha(80),
+                                color: Colors.black.withAlpha(120),
                                 spreadRadius: 1000,
                               ),
                             ],
                           ),
                           child: Stack(
                             children: [
-                              // 4 Corner Brackets
-                              ..._buildCornerBrackets(),
+                              // 4 Precision Rounded Corner Brackets (flush with 16px radius)
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _ReticleCornerPainter(
+                                    color: const Color(0xFF00FF66),
+                                    cornerLength: 26.0,
+                                    strokeWidth: 3.5,
+                                    radius: 16.0,
+                                  ),
+                                ),
+                              ),
 
                               // Animated Scanning Laser Bar
                               AnimatedBuilder(
@@ -821,51 +814,11 @@ class _BearingAuthenticationScreenState
                   icon: const Icon(Icons.flip_camera_ios_rounded, color: AppColors.primary),
                   tooltip: 'Switch Camera',
                 ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.background,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: _showManualEntryDialog,
-                  icon: const Icon(Icons.keyboard_alt_outlined, size: 18),
-                  label: const Text(
-                    'Manual Entry',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
       ],
     );
-  }
-
-  List<Widget> _buildCornerBrackets() {
-    const double length = 22.0;
-    const double thickness = 3.5;
-    const Color cornerColor = Color(0xFF00FF66);
-
-    return [
-      // Top-Left
-      Positioned(top: 0, left: 0, child: Container(width: length, height: thickness, color: cornerColor)),
-      Positioned(top: 0, left: 0, child: Container(width: thickness, height: length, color: cornerColor)),
-      // Top-Right
-      Positioned(top: 0, right: 0, child: Container(width: length, height: thickness, color: cornerColor)),
-      Positioned(top: 0, right: 0, child: Container(width: thickness, height: length, color: cornerColor)),
-      // Bottom-Left
-      Positioned(bottom: 0, left: 0, child: Container(width: length, height: thickness, color: cornerColor)),
-      Positioned(bottom: 0, left: 0, child: Container(width: thickness, height: length, color: cornerColor)),
-      // Bottom-Right
-      Positioned(bottom: 0, right: 0, child: Container(width: length, height: thickness, color: cornerColor)),
-      Positioned(bottom: 0, right: 0, child: Container(width: thickness, height: length, color: cornerColor)),
-    ];
   }
 
   Widget _buildNativeCameraViewport() {
@@ -904,6 +857,19 @@ class _BearingAuthenticationScreenState
     return MobileScanner(
       controller: _scannerController!,
       onDetect: _onBarcodeDetected,
+      errorBuilder: (context, error) {
+        final msg = error.errorDetails?.message ?? error.toString();
+        if (msg.contains('already running') ||
+            error.errorCode == MobileScannerErrorCode.controllerAlreadyInitialized) {
+          return const SizedBox.shrink();
+        }
+        return Center(
+          child: Text(
+            'Initializing camera...',
+            style: AppTypography.bodySm.copyWith(color: Colors.white70),
+          ),
+        );
+      },
     );
   }
 
@@ -923,14 +889,16 @@ class _BearingAuthenticationScreenState
             ),
             const SizedBox(height: 8),
             const Text(
-              'Please allow camera permission to scan bearing QR codes, or verify by typing the serial number manually.',
+              'Please allow camera permission in your browser or device settings to scan bearing QR codes.',
               style: AppTypography.bodySm,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
             IndustrialButton(
-              label: 'ENTER SERIAL MANUALLY',
-              onPressed: _showManualEntryDialog,
+              label: 'REQUEST CAMERA ACCESS',
+              onPressed: () {
+                _initScanner();
+              },
             ),
           ],
         ),
@@ -1876,5 +1844,73 @@ class _BearingAuthenticationScreenState
         ],
       ),
     );
+  }
+}
+
+/// Custom painter for the 4 corner brackets of the camera reticle.
+/// Precisely hugs the 16px rounded corners of the viewfinder box without overlapping or protruding.
+class _ReticleCornerPainter extends CustomPainter {
+  final Color color;
+  final double cornerLength;
+  final double strokeWidth;
+  final double radius;
+
+  const _ReticleCornerPainter({
+    required this.color,
+    this.cornerLength = 26.0,
+    this.strokeWidth = 3.5,
+    this.radius = 16.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final half = strokeWidth / 2;
+    final r = radius;
+
+    // Top-Left (curves from left edge up into top edge)
+    final pathTL = Path()
+      ..moveTo(half, cornerLength)
+      ..lineTo(half, r)
+      ..arcToPoint(Offset(r, half), radius: Radius.circular(r - half), clockwise: true)
+      ..lineTo(cornerLength, half);
+    canvas.drawPath(pathTL, paint);
+
+    // Top-Right (curves from top edge down into right edge)
+    final pathTR = Path()
+      ..moveTo(size.width - cornerLength, half)
+      ..lineTo(size.width - r, half)
+      ..arcToPoint(Offset(size.width - half, r), radius: Radius.circular(r - half), clockwise: true)
+      ..lineTo(size.width - half, cornerLength);
+    canvas.drawPath(pathTR, paint);
+
+    // Bottom-Left (curves from left edge down into bottom edge)
+    final pathBL = Path()
+      ..moveTo(half, size.height - cornerLength)
+      ..lineTo(half, size.height - r)
+      ..arcToPoint(Offset(r, size.height - half), radius: Radius.circular(r - half), clockwise: false)
+      ..lineTo(cornerLength, size.height - half);
+    canvas.drawPath(pathBL, paint);
+
+    // Bottom-Right (curves from bottom edge up into right edge)
+    final pathBR = Path()
+      ..moveTo(size.width - cornerLength, size.height - half)
+      ..lineTo(size.width - r, size.height - half)
+      ..arcToPoint(Offset(size.width - half, size.height - r), radius: Radius.circular(r - half), clockwise: false)
+      ..lineTo(size.width - half, size.height - cornerLength);
+    canvas.drawPath(pathBR, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReticleCornerPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.cornerLength != cornerLength ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.radius != radius;
   }
 }

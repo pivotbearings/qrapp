@@ -123,9 +123,30 @@ class _OutResultScreenState extends State<OutResultScreen> {
         ? (remainingDays > 0 ? '$remainingDays Days' : '0 Days (Expired)')
         : 'Active Balance';
 
-    return Scaffold(
+    // Guard: prevent back-navigation to OutConfirmation or BearingVerification
+    // after a successful OUT. The bearing is now permanently decommissioned;
+    // returning to any previous screen in the stack would be misleading.
+    void goHome() {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.customerHome,
+        (route) => false,
+      );
+    }
+
+    return PopScope(
+      // Intercept Android hardware back button — navigate to home instead
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) goHome();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const IndustrialAppBar(title: 'Bearing Lifecycle'),
+      appBar: IndustrialAppBar(
+        title: 'Bearing Lifecycle',
+        // Override back arrow to go home, not back to Mark Bearing OUT screen
+        onBack: goHome,
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppDimensions.gutterMobile),
@@ -227,11 +248,7 @@ class _OutResultScreenState extends State<OutResultScreen> {
               IndustrialButton(
                 label: 'Return to Home',
                 icon: Icons.home,
-                onPressed: () => Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  AppRoutes.customerHome,
-                  (route) => false,
-                ),
+                onPressed: goHome,
               ),
 
               const SizedBox(height: AppDimensions.spaceSm),
@@ -246,7 +263,8 @@ class _OutResultScreenState extends State<OutResultScreen> {
           ),
         ),
       ),
-    );
+    ), // Scaffold
+    ); // PopScope
   }
 
   Future<void> _shareViaWhatsApp({
