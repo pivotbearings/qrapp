@@ -45,26 +45,26 @@ class _OutResultScreenState extends State<OutResultScreen> {
     final cleanId = widget.bearingId.trim();
     final upperId = cleanId.toUpperCase();
 
-    DateTime? inDt = b?.lastInDate ?? b?.firstInDate;
+    DateTime? inDt = (b?.lastInDate ?? b?.firstInDate)?.toLocal();
     if (inDt == null) {
       final storedIn = prefs.getString('pbi_track_in_time_$cleanId') ??
           prefs.getString('pbi_track_in_time_$upperId') ??
           prefs.getString('pbi_track_in_time_${widget.bearingId}');
       if (storedIn != null) {
-        inDt = DateTime.tryParse(storedIn);
+        inDt = DateTime.tryParse(storedIn)?.toLocal();
       }
     }
 
-    DateTime? outDt = b?.lastOutDate;
+    DateTime? outDt = b?.lastOutDate?.toLocal();
     if (outDt == null) {
       final storedOut = prefs.getString('pbi_track_out_time_$cleanId') ??
           prefs.getString('pbi_track_out_time_$upperId') ??
           prefs.getString('pbi_track_out_time_${widget.bearingId}');
       if (storedOut != null) {
-        outDt = DateTime.tryParse(storedOut);
+        outDt = DateTime.tryParse(storedOut)?.toLocal();
       }
     }
-    outDt ??= DateTime.now();
+    outDt ??= DateTime.now().toLocal();
 
     if (inDt == null) {
       inDt = outDt.subtract(const Duration(minutes: 5));
@@ -81,8 +81,8 @@ class _OutResultScreenState extends State<OutResultScreen> {
     if (mounted) {
       setState(() {
         _bearing = b;
-        _resolvedInDate = inDt;
-        _resolvedOutDate = outDt;
+        _resolvedInDate = inDt?.toLocal();
+        _resolvedOutDate = outDt?.toLocal();
         _inNotes = inN;
         _outNotes = outN;
       });
@@ -90,8 +90,9 @@ class _OutResultScreenState extends State<OutResultScreen> {
   }
 
   String _formatDate(DateTime dt) {
+    final local = dt.toLocal();
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${dt.day.toString().padLeft(2, '0')} ${months[dt.month - 1]} ${dt.year}';
+    return '${local.day.toString().padLeft(2, '0')} ${months[local.month - 1]} ${local.year}';
   }
 
   String _formatOperatingDuration(Duration d) {
@@ -141,8 +142,8 @@ class _OutResultScreenState extends State<OutResultScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final inDate = _resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate;
-    final outDate = _resolvedOutDate ?? _bearing?.lastOutDate ?? now;
+    final inDate = (_resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate)?.toLocal();
+    final outDate = (_resolvedOutDate ?? _bearing?.lastOutDate ?? now).toLocal();
     final inDateStr = inDate != null
         ? '${_formatDate(inDate)}, ${inDate.hour.toString().padLeft(2, '0')}:${inDate.minute.toString().padLeft(2, '0')}'
         : '${_formatDate(outDate.subtract(const Duration(minutes: 5)))}, ${(outDate.hour).toString().padLeft(2, '0')}:${(outDate.minute).toString().padLeft(2, '0')}';
@@ -153,9 +154,9 @@ class _OutResultScreenState extends State<OutResultScreen> {
     final totalDurationHeader = _formatHeaderDuration(duration);
 
     final durationMonths = _bearing?.warrantyDurationMonths ?? 0;
-    DateTime? expiry = _bearing?.warrantyExpiryDate;
+    DateTime? expiry = _bearing?.warrantyExpiryDate?.toLocal();
     if (inDate != null && durationMonths > 0) {
-      expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durationMonths);
+      expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durationMonths).toLocal();
     }
 
     // Resolve authentic model
@@ -370,12 +371,12 @@ class _OutResultScreenState extends State<OutResultScreen> {
     }
 
     final durMonths = _bearing?.warrantyDurationMonths ?? 12;
-    final inDate = _resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate;
-    final outDate = _resolvedOutDate ?? _bearing?.lastOutDate ?? DateTime.now();
+    final inDate = (_resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate)?.toLocal();
+    final outDate = (_resolvedOutDate ?? _bearing?.lastOutDate ?? DateTime.now()).toLocal();
 
-    DateTime? expiry = _bearing?.warrantyExpiryDate;
+    DateTime? expiry = _bearing?.warrantyExpiryDate?.toLocal();
     if (inDate != null && durMonths > 0) {
-      expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durMonths);
+      expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durMonths).toLocal();
     }
     final isUnderWarranty = expiry != null ? outDate.isBefore(expiry) : !(_bearing?.isWarrantyExpired ?? false);
     final operatingStatus = isUnderWarranty

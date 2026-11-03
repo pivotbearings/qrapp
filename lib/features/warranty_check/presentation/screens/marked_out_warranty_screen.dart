@@ -95,9 +95,9 @@ class _MarkedOutWarrantyScreenState extends State<MarkedOutWarrantyScreen> {
   }
 
   Future<void> _claimWarrantyViaWhatsApp(BearingModel b) async {
-    final inDate = b.lastInDate ?? b.firstInDate;
+    final inDate = (b.lastInDate ?? b.firstInDate)?.toLocal();
     final inDateStr = inDate != null ? _dateFormat.format(inDate) : 'Session Recorded';
-    final outDateStr = b.lastOutDate != null ? _dateFormat.format(b.lastOutDate!) : _dateFormat.format(DateTime.now());
+    final outDateStr = b.lastOutDate != null ? _dateFormat.format(b.lastOutDate!.toLocal()) : _dateFormat.format(DateTime.now());
     final durationStr = _calculateDuration(b);
 
     var modelCode = b.modelNumber;
@@ -414,9 +414,9 @@ Official Authorized Warranty Claim Record - Pivot Bearings India
   }
 
   Widget _buildClaimableBearingCard(BearingModel b) {
-    final inDate = b.lastInDate ?? b.firstInDate;
+    final inDate = (b.lastInDate ?? b.firstInDate)?.toLocal();
     final inDateStr = inDate != null ? _dateFormat.format(inDate) : 'Session Recorded';
-    final outDateStr = b.lastOutDate != null ? _dateFormat.format(b.lastOutDate!) : 'Marked Out';
+    final outDateStr = b.lastOutDate != null ? _dateFormat.format(b.lastOutDate!.toLocal()) : 'Marked Out';
     final durationStr = _calculateDuration(b);
 
     var modelCode = b.modelNumber;

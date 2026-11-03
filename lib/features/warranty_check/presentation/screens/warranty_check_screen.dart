@@ -1165,20 +1165,20 @@ Pivot Bearings India''';
     final upperId = cleanId.toUpperCase();
     final rawId = bearing.id.trim();
 
-    DateTime? resolvedFirstIn = bearing.firstInDate;
+    DateTime? resolvedFirstIn = bearing.firstInDate?.toLocal();
     if (resolvedFirstIn == null) {
       final storedIn = prefs.getString('pbi_track_in_time_$cleanId') ??
           prefs.getString('pbi_track_in_time_$upperId') ??
           prefs.getString('pbi_track_in_time_$rawId');
-      if (storedIn != null) resolvedFirstIn = DateTime.tryParse(storedIn);
+      if (storedIn != null) resolvedFirstIn = DateTime.tryParse(storedIn)?.toLocal();
     }
 
-    DateTime? resolvedLastOut = bearing.lastOutDate;
+    DateTime? resolvedLastOut = bearing.lastOutDate?.toLocal();
     if (resolvedLastOut == null) {
       final storedOut = prefs.getString('pbi_track_out_time_$cleanId') ??
           prefs.getString('pbi_track_out_time_$upperId') ??
           prefs.getString('pbi_track_out_time_$rawId');
-      if (storedOut != null) resolvedLastOut = DateTime.tryParse(storedOut);
+      if (storedOut != null) resolvedLastOut = DateTime.tryParse(storedOut)?.toLocal();
     }
 
     // Resolve state from prefs with total resilience

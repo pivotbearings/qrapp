@@ -507,25 +507,25 @@ class BearingRepositoryImpl implements BearingRepository {
           if (summary['success'] == true) {
             final dur = (summary['warranty_duration_months'] as num).toInt();
             DateTime? firstIn = summary['first_in_timestamp'] != null
-                ? DateTime.tryParse(summary['first_in_timestamp'].toString())
+                ? DateTime.tryParse(summary['first_in_timestamp'].toString())?.toLocal()
                 : null;
             if (firstIn == null) {
               final inTimeStr = prefs.getString('pbi_track_in_time_$cleanId') ??
                   prefs.getString('pbi_track_in_time_$upperId') ??
                   prefs.getString('pbi_track_in_time_$rawId');
               if (inTimeStr != null) {
-                firstIn = DateTime.tryParse(inTimeStr);
+                firstIn = DateTime.tryParse(inTimeStr)?.toLocal();
               }
             }
             DateTime? lastOut = summary['last_out_timestamp'] != null
-                ? DateTime.tryParse(summary['last_out_timestamp'].toString())
+                ? DateTime.tryParse(summary['last_out_timestamp'].toString())?.toLocal()
                 : null;
             if (lastOut == null) {
               final outTimeStr = prefs.getString('pbi_track_out_time_$cleanId') ??
                   prefs.getString('pbi_track_out_time_$upperId') ??
                   prefs.getString('pbi_track_out_time_$rawId');
               if (outTimeStr != null) {
-                lastOut = DateTime.tryParse(outTimeStr);
+                lastOut = DateTime.tryParse(outTimeStr)?.toLocal();
               }
             }
 
@@ -545,10 +545,10 @@ class BearingRepositoryImpl implements BearingRepository {
             }
 
             DateTime? expiry = summary['warranty_expiry_timestamp'] != null
-                ? DateTime.tryParse(summary['warranty_expiry_timestamp'].toString())
+                ? DateTime.tryParse(summary['warranty_expiry_timestamp'].toString())?.toLocal()
                 : null;
             if (firstIn != null && expiry == null) {
-              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur);
+              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur).toLocal();
             }
 
             final resBearing = BearingModel(
@@ -649,15 +649,15 @@ class BearingRepositoryImpl implements BearingRepository {
             }
 
             DateTime? firstIn = response['first_in_timestamp'] != null
-                ? DateTime.tryParse(response['first_in_timestamp'].toString())
+                ? DateTime.tryParse(response['first_in_timestamp'].toString())?.toLocal()
                 : (prefs.getString('pbi_track_in_time_$cleanId') != null
-                    ? DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId')!)
+                    ? DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId')!)?.toLocal()
                     : null);
             if (firstIn == null) {
               final inTimeStr = prefs.getString('pbi_track_in_time_$upperId') ??
                   prefs.getString('pbi_track_in_time_$rawId');
               if (inTimeStr != null) {
-                firstIn = DateTime.tryParse(inTimeStr);
+                firstIn = DateTime.tryParse(inTimeStr)?.toLocal();
               }
             }
             if (state == BearingLifecycleState.currentlyIn && firstIn == null) {
@@ -665,15 +665,15 @@ class BearingRepositoryImpl implements BearingRepository {
               await prefs.setString('pbi_track_in_time_$cleanId', firstIn.toIso8601String());
             }
             final lastOut = response['last_out_timestamp'] != null
-                ? DateTime.tryParse(response['last_out_timestamp'].toString())
+                ? DateTime.tryParse(response['last_out_timestamp'].toString())?.toLocal()
                 : (prefs.getString('pbi_track_out_time_$cleanId') != null
-                    ? DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId')!)
+                    ? DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId')!)?.toLocal()
                     : null);
             DateTime? expiry = response['warranty_expiry_timestamp'] != null
-                ? DateTime.tryParse(response['warranty_expiry_timestamp'].toString())
+                ? DateTime.tryParse(response['warranty_expiry_timestamp'].toString())?.toLocal()
                 : null;
             if (firstIn != null && expiry == null) {
-              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur);
+              expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur).toLocal();
             }
 
             final resBearing = BearingModel(
@@ -717,15 +717,15 @@ class BearingRepositoryImpl implements BearingRepository {
         }
 
         DateTime? firstIn = qrRec['first_in_timestamp'] != null
-            ? DateTime.tryParse(qrRec['first_in_timestamp'].toString())
+            ? DateTime.tryParse(qrRec['first_in_timestamp'].toString())?.toLocal()
             : (prefs.getString('pbi_track_in_time_$cleanId') != null
-                ? DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId')!)
+                ? DateTime.tryParse(prefs.getString('pbi_track_in_time_$cleanId')!)?.toLocal()
                 : null);
         if (firstIn == null) {
           final inTimeStr = prefs.getString('pbi_track_in_time_$upperId') ??
               prefs.getString('pbi_track_in_time_$rawId');
           if (inTimeStr != null) {
-            firstIn = DateTime.tryParse(inTimeStr);
+            firstIn = DateTime.tryParse(inTimeStr)?.toLocal();
           }
         }
         if (state == BearingLifecycleState.currentlyIn && firstIn == null) {
@@ -734,12 +734,12 @@ class BearingRepositoryImpl implements BearingRepository {
         }
 
         final lastOut = qrRec['last_out_timestamp'] != null
-            ? DateTime.tryParse(qrRec['last_out_timestamp'].toString())
+            ? DateTime.tryParse(qrRec['last_out_timestamp'].toString())?.toLocal()
             : (prefs.getString('pbi_track_out_time_$cleanId') != null
-                ? DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId')!)
+                ? DateTime.tryParse(prefs.getString('pbi_track_out_time_$cleanId')!)?.toLocal()
                 : null);
         final expiry = firstIn != null
-            ? WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur)
+            ? WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur).toLocal()
             : null;
 
         final resolvedBearing = BearingModel(
@@ -1155,15 +1155,15 @@ class BearingRepositoryImpl implements BearingRepository {
             state = BearingLifecycleState.currentlyIn;
           }
 
-          DateTime? firstIn = m['first_in_timestamp'] != null ? DateTime.tryParse(m['first_in_timestamp'].toString()) : null;
+          DateTime? firstIn = m['first_in_timestamp'] != null ? DateTime.tryParse(m['first_in_timestamp'].toString())?.toLocal() : null;
           if (firstIn == null) {
             final storedIn = prefs.getString('pbi_track_in_time_$bId') ?? prefs.getString('pbi_track_in_time_$bUpper');
-            if (storedIn != null) firstIn = DateTime.tryParse(storedIn);
+            if (storedIn != null) firstIn = DateTime.tryParse(storedIn)?.toLocal();
           }
-          DateTime? lastOut = m['last_out_timestamp'] != null ? DateTime.tryParse(m['last_out_timestamp'].toString()) : null;
+          DateTime? lastOut = m['last_out_timestamp'] != null ? DateTime.tryParse(m['last_out_timestamp'].toString())?.toLocal() : null;
           if (lastOut == null) {
             final storedOut = prefs.getString('pbi_track_out_time_$bId') ?? prefs.getString('pbi_track_out_time_$bUpper');
-            if (storedOut != null) lastOut = DateTime.tryParse(storedOut);
+            if (storedOut != null) lastOut = DateTime.tryParse(storedOut)?.toLocal();
           }
 
           int dur = 12;
@@ -1182,9 +1182,9 @@ class BearingRepositoryImpl implements BearingRepository {
             }
           }
 
-          DateTime? expiry = m['warranty_expiry_timestamp'] != null ? DateTime.tryParse(m['warranty_expiry_timestamp'].toString()) : null;
+          DateTime? expiry = m['warranty_expiry_timestamp'] != null ? DateTime.tryParse(m['warranty_expiry_timestamp'].toString())?.toLocal() : null;
           if (expiry == null && firstIn != null && dur > 0) {
-            expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur);
+            expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: firstIn, durationMonths: dur).toLocal();
           }
 
           return BearingModel(
