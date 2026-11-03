@@ -15,6 +15,7 @@ import '../../../bearing_verification/data/models/bearing_model.dart';
 import '../../../bearing_verification/data/repositories/bearing_repository.dart';
 import '../../../bearing_verification/domain/models/qr_verification_result.dart';
 import '../../../bearing_verification/presentation/widgets/bearing_out_email_dialog.dart';
+import '../../../bearing_verification/domain/services/warranty_calculator.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
