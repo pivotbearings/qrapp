@@ -656,8 +656,8 @@ class BearingRepositoryImpl implements BearingRepository {
               lastInDate: firstIn,
               lastOutDate: lastOut,
               explicitExpiryDate: expiry,
-              inNotes: summary['in_notes']?.toString() ?? prefs.getString('pbi_bearing_in_notes_$cleanId') ?? prefs.getString('pbi_bearing_notes_$cleanId'),
-              outNotes: summary['out_notes']?.toString() ?? prefs.getString('pbi_bearing_out_notes_$cleanId') ?? prefs.getString('pbi_mark_out_notes_$cleanId'),
+              inNotes: response['in_notes']?.toString() ?? prefs.getString('pbi_bearing_in_notes_$cleanId') ?? prefs.getString('pbi_bearing_notes_$cleanId'),
+              outNotes: response['out_notes']?.toString() ?? prefs.getString('pbi_bearing_out_notes_$cleanId') ?? prefs.getString('pbi_mark_out_notes_$cleanId'),
             );
             registerInMemoryBearing(resBearing);
             return resBearing;
@@ -1133,7 +1133,6 @@ class BearingRepositoryImpl implements BearingRepository {
         }).toList();
 
         // Merge locally tracked bearings if not already included
-        final prefs = await SharedPreferences.getInstance();
         final localTracked = prefs.getStringList('pbi_tracked_bearings_list') ?? [];
         for (final tid in localTracked) {
           if (!list.any((b) => b.id.toUpperCase() == tid.toUpperCase())) {
