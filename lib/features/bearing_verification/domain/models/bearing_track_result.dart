@@ -159,6 +159,19 @@ class BearingTrackResult {
   bool get isAlreadyOut => isValid && action == 'ALREADY_OUT';
   bool get isInvalid => !isValid;
 
+  /// Returns true if the removal (or current state) occurred within active warranty period
+  bool get isUnderWarranty {
+    final expiry = warrantyExpiryTimestamp ??
+        (inTimestamp != null && (warrantyDurationMonths ?? 0) > 0
+            ? inTimestamp!.add(Duration(days: (warrantyDurationMonths!) * 30))
+            : null);
+    if (expiry != null) {
+      final compareDate = outTimestamp ?? DateTime.now();
+      return compareDate.isBefore(expiry);
+    }
+    return true;
+  }
+
   factory BearingTrackResult.fromJson(Map<String, dynamic> json, {String? rawPayload}) {
     final historyList = (json['lifecycle_history'] as List<dynamic>?)
             ?.map((e) => BearingCycleRecord.fromJson(Map<String, dynamic>.from(e as Map)))

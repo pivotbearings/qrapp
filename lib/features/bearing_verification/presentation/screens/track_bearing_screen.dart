@@ -3055,7 +3055,14 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 
     final isBearingIn = result.action.toUpperCase() == 'BEARING_IN';
     final durMonths = result.warrantyDurationMonths ?? 12;
-    final inTime = result.inTimestamp;
+    DateTime? inTime = result.inTimestamp;
+    final cleanId = result.bearingId?.trim() ?? '';
+    final upperId = cleanId.toUpperCase();
+    if (inTime == null && cleanId.isNotEmpty) {
+      final storedIn = prefs.getString('pbi_track_in_time_$cleanId') ??
+          prefs.getString('pbi_track_in_time_$upperId');
+      if (storedIn != null) inTime = DateTime.tryParse(storedIn);
+    }
     final outTime = result.outTimestamp ?? DateTime.now();
 
     DateTime? expiry = result.warrantyExpiryTimestamp;
