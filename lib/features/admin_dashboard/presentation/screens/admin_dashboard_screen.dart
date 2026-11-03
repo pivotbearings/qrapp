@@ -40,7 +40,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _NavTabItem(title: 'Users / Customers', icon: Icons.people_alt_rounded, subtitle: 'Role-Based Access & Module Permissions'),
     _NavTabItem(title: 'Verification Proofs', icon: Icons.photo_library, subtitle: 'Signed Private Images'),
     _NavTabItem(title: 'Company Settings', icon: Icons.settings, subtitle: 'Identity & Configuration'),
-    _NavTabItem(title: 'Reward Points', icon: Icons.stars, subtitle: 'Conversion Rate & Payouts'),
+    _NavTabItem(title: 'Reward Points', icon: Icons.card_giftcard_rounded, subtitle: 'Conversion Rate & Payouts'),
   ];
 
   @override
@@ -335,19 +335,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: [
                 Image.asset(
                   'assets/company_logo.webp',
-                  height: 28,
+                  height: 32,
                   fit: BoxFit.contain,
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('PIVOT BEARINGS', style: AppTypography.labelMd, overflow: TextOverflow.ellipsis),
-                      Text('ENTERPRISE ADMIN', style: AppTypography.caption, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
                 ),
               ],
             ),

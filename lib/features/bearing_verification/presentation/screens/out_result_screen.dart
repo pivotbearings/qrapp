@@ -28,6 +28,8 @@ class OutResultScreen extends StatefulWidget {
 
 class _OutResultScreenState extends State<OutResultScreen> {
   BearingModel? _bearing;
+  DateTime? _resolvedInDate;
+  DateTime? _resolvedOutDate;
   String? _inNotes;
   String? _outNotes;
 
@@ -40,6 +42,35 @@ class _OutResultScreenState extends State<OutResultScreen> {
   Future<void> _loadBearing() async {
     final b = await BearingRepositoryImpl().getBearingById(widget.bearingId);
     final prefs = await SharedPreferences.getInstance();
+    final cleanId = widget.bearingId.trim();
+    final upperId = cleanId.toUpperCase();
+
+    DateTime? inDt = b?.lastInDate ?? b?.firstInDate;
+    if (inDt == null) {
+      final storedIn = prefs.getString('pbi_track_in_time_$cleanId') ??
+          prefs.getString('pbi_track_in_time_$upperId') ??
+          prefs.getString('pbi_track_in_time_${widget.bearingId}');
+      if (storedIn != null) {
+        inDt = DateTime.tryParse(storedIn);
+      }
+    }
+
+    DateTime? outDt = b?.lastOutDate;
+    if (outDt == null) {
+      final storedOut = prefs.getString('pbi_track_out_time_$cleanId') ??
+          prefs.getString('pbi_track_out_time_$upperId') ??
+          prefs.getString('pbi_track_out_time_${widget.bearingId}');
+      if (storedOut != null) {
+        outDt = DateTime.tryParse(storedOut);
+      }
+    }
+    outDt ??= DateTime.now();
+
+    if (inDt == null) {
+      inDt = outDt.subtract(const Duration(minutes: 5));
+      await prefs.setString('pbi_track_in_time_$cleanId', inDt.toIso8601String());
+    }
+
     final inN = prefs.getString('pbi_bearing_in_notes_${widget.bearingId}') ??
         prefs.getString('pbi_bearing_notes_${widget.bearingId}') ??
         b?.inNotes;
@@ -50,6 +81,8 @@ class _OutResultScreenState extends State<OutResultScreen> {
     if (mounted) {
       setState(() {
         _bearing = b;
+        _resolvedInDate = inDt;
+        _resolvedOutDate = outDt;
         _inNotes = inN;
         _outNotes = outN;
       });
@@ -108,16 +141,16 @@ class _OutResultScreenState extends State<OutResultScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final inDate = _bearing?.lastInDate ?? _bearing?.firstInDate;
-    final outDate = _bearing?.lastOutDate ?? now;
+    final inDate = _resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate;
+    final outDate = _resolvedOutDate ?? _bearing?.lastOutDate ?? now;
     final inDateStr = inDate != null
         ? '${_formatDate(inDate)}, ${inDate.hour.toString().padLeft(2, '0')}:${inDate.minute.toString().padLeft(2, '0')}'
-        : 'Session Recorded';
+        : '${_formatDate(outDate.subtract(const Duration(minutes: 5)))}, ${(outDate.hour).toString().padLeft(2, '0')}:${(outDate.minute).toString().padLeft(2, '0')}';
     final outDateStr = '${_formatDate(outDate)}, ${outDate.hour.toString().padLeft(2, '0')}:${outDate.minute.toString().padLeft(2, '0')}';
 
-    final duration = inDate != null ? outDate.difference(inDate) : const Duration(seconds: 0);
-    final cycleSummary = inDate != null ? _formatOperatingDuration(duration) : 'Cycle Closed';
-    final totalDurationHeader = inDate != null ? _formatHeaderDuration(duration) : 'Cycle Successfully Closed';
+    final duration = inDate != null ? outDate.difference(inDate) : const Duration(minutes: 5);
+    final cycleSummary = _formatOperatingDuration(duration);
+    final totalDurationHeader = _formatHeaderDuration(duration);
 
     final durationMonths = _bearing?.warrantyDurationMonths ?? 0;
     DateTime? expiry = _bearing?.warrantyExpiryDate;
@@ -125,7 +158,7 @@ class _OutResultScreenState extends State<OutResultScreen> {
       expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durationMonths);
     }
 
-    // Resolve authentic model and product name
+    // Resolve authentic model
     var resolvedModel = _bearing?.modelNumber;
     if (resolvedModel == null || resolvedModel.isEmpty || resolvedModel == 'PBI-Standard' || resolvedModel == 'PBI-6204-ZZ') {
       final b1Item = ItemMasterRepository().findByCode('B1');
@@ -135,10 +168,6 @@ class _OutResultScreenState extends State<OutResultScreen> {
         resolvedModel = _bearing?.modelNumber ?? 'B1';
       }
     }
-    final item = ItemMasterRepository().findByCode(resolvedModel) ?? ItemMasterRepository().findByCode('B1');
-    final pName = _bearing?.productName ??
-        item?.itemName ??
-        'Bearing 1(Ball Bearing)';
 
     // Warranty status judged authoritatively against OUT timestamp, not current time
     final isWarrantyValid = expiry != null ? expiry.isAfter(outDate) : !(_bearing?.isWarrantyExpired ?? false);
@@ -203,7 +232,7 @@ class _OutResultScreenState extends State<OutResultScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const IndustrialStatusBadge(statusText: '[REMOVAL CONFIRMED — DECOMMISSIONED]'),
+                          const IndustrialStatusBadge(statusText: 'MARKED OUT (DECOMMISSIONED)'),
                           const SizedBox(height: 4),
                           Text(
                             totalDurationHeader,
@@ -226,8 +255,6 @@ class _OutResultScreenState extends State<OutResultScreen> {
                     _buildRow('Bearing ID', widget.bearingId, isMono: true),
                     const Divider(),
                     _buildRow('Item Code / Model No', resolvedModel),
-                    const Divider(),
-                    _buildRow('Assigned Product', pName),
                     const Divider(),
                     _buildRow('Installation (IN) Timestamp', inDateStr),
                     const Divider(),
@@ -331,7 +358,7 @@ class _OutResultScreenState extends State<OutResultScreen> {
     }
     final notesSection = notesBuffer.toString();
 
-    // Resolve authentic model and product name
+    // Resolve authentic model
     var resolvedModel = _bearing?.modelNumber;
     if (resolvedModel == null || resolvedModel.isEmpty || resolvedModel == 'PBI-Standard' || resolvedModel == 'PBI-6204-ZZ') {
       final b1Item = ItemMasterRepository().findByCode('B1');
@@ -342,17 +369,11 @@ class _OutResultScreenState extends State<OutResultScreen> {
       }
     }
 
-    final item = ItemMasterRepository().findByCode(resolvedModel) ?? ItemMasterRepository().findByCode('B1');
-    final pName = _bearing?.productName ??
-        item?.itemName ??
-        'Bearing 1(Ball Bearing)';
-
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR Serial:* ${widget.bearingId}
 • *Model / Part No:* $resolvedModel
-• *Assigned Product:* $pName
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $cycleSummary
@@ -452,17 +473,46 @@ Official Authorized Bearing Traceability & Authenticity Ledger
   }
 
   Widget _buildRow(String label, String value, {bool isHeadline = false, bool isMono = false}) {
+    final isNotesOrLong = label.contains('Notes') || value.length > 30;
+    if (isNotesOrLong) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: AppTypography.labelSm),
+            const SizedBox(height: 3),
+            Text(
+              value,
+              style: isHeadline
+                  ? AppTypography.headlineSm
+                  : (isMono ? AppTypography.mono : AppTypography.labelMd),
+              textAlign: TextAlign.start,
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: AppTypography.labelSm),
-          Text(
-            value,
-            style: isHeadline
-                ? AppTypography.headlineSm
-                : (isMono ? AppTypography.mono : AppTypography.labelMd),
+          Expanded(
+            flex: 4,
+            child: Text(label, style: AppTypography.labelSm),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 5,
+            child: Text(
+              value,
+              style: isHeadline
+                  ? AppTypography.headlineSm
+                  : (isMono ? AppTypography.mono : AppTypography.labelMd),
+              textAlign: TextAlign.end,
+            ),
           ),
         ],
       ),

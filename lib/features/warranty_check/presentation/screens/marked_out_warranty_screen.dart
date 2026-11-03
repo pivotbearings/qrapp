@@ -135,7 +135,6 @@ class _MarkedOutWarrantyScreenState extends State<MarkedOutWarrantyScreen> {
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR Serial:* ${b.id}
 • *Model / Part No:* $modelCode
-• *Assigned Product:* $productName
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $durationStr
@@ -455,8 +454,6 @@ Official Authorized Warranty Claim Record - Pivot Bearings India
 
           // Specs Grid / Rows
           _buildDetailRow('Model / Part No', modelCode, isMono: true),
-          const SizedBox(height: 6),
-          _buildDetailRow('Assigned Product', productName),
           const SizedBox(height: 6),
           _buildDetailRow('Bearing In (Installed)', inDateStr),
           const SizedBox(height: 6),

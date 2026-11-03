@@ -342,7 +342,7 @@ begin
     'batch_code', coalesce(v_batch.batch_code, 'BATCH-ACTIVE'),
     'plant_location', coalesce(v_batch.plant_location, 'Plant 02 — Chakan Industrial Complex'),
     'model_number', coalesce(v_qr.model_number, 'B1'),
-    'product_name', coalesce(v_batch.batch_code, 'Bearing 1(Ball Bearing)'),
+    'product_name', 'Bearing 1(Ball Bearing)',
     'category', 'Ball Bearing',
     'warranty_duration_months', v_dur,
     'warranty_plan_title', coalesce(v_plan.title, v_dur || ' Months Industrial Warranty (' || v_dur || 'M)'),

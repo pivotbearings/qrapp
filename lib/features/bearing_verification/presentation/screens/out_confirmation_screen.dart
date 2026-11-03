@@ -28,6 +28,7 @@ class OutConfirmationScreen extends StatefulWidget {
 
 class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   BearingModel? _bearing;
+  DateTime? _resolvedInDate;
   bool _isProcessing = false;
   Timer? _liveTicker;
   final TextEditingController _outNotesController = TextEditingController();
@@ -51,6 +52,23 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   Future<void> _loadBearing() async {
     await QrManagementRepository.loadFromLocalStorage();
     final b = await BearingRepositoryImpl().getBearingById(widget.bearingId);
+    final prefs = await SharedPreferences.getInstance();
+    final cleanId = widget.bearingId.trim();
+    final upperId = cleanId.toUpperCase();
+
+    DateTime? inDt = b?.lastInDate ?? b?.firstInDate;
+    if (inDt == null) {
+      final storedIso = prefs.getString('pbi_track_in_time_$cleanId') ??
+          prefs.getString('pbi_track_in_time_$upperId') ??
+          prefs.getString('pbi_track_in_time_${widget.bearingId}');
+      if (storedIso != null) {
+        inDt = DateTime.tryParse(storedIso);
+      }
+    }
+    if (inDt == null) {
+      inDt = DateTime.now().subtract(const Duration(minutes: 5));
+      await prefs.setString('pbi_track_in_time_$cleanId', inDt.toIso8601String());
+    }
 
     // AUTO-MODE: If bearing was never marked IN, auto-switch to Mark Bearing IN
     if (b?.state == BearingLifecycleState.notActivated) {
@@ -71,6 +89,7 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
     if (mounted) {
       setState(() {
         _bearing = b;
+        _resolvedInDate = inDt;
       });
     }
   }
@@ -83,6 +102,19 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      final cleanId = widget.bearingId.trim();
+      final upperId = cleanId.toUpperCase();
+      final outNow = DateTime.now();
+
+      if (_resolvedInDate != null) {
+        final inIso = _resolvedInDate!.toIso8601String();
+        await prefs.setString('pbi_track_in_time_$cleanId', inIso);
+        await prefs.setString('pbi_track_in_time_$upperId', inIso);
+      }
+      final outIso = outNow.toIso8601String();
+      await prefs.setString('pbi_track_out_time_$cleanId', outIso);
+      await prefs.setString('pbi_track_out_time_$upperId', outIso);
+
       if (outNotes.isNotEmpty) {
         await prefs.setString('pbi_bearing_out_notes_${widget.bearingId}', outNotes);
         await prefs.setString('pbi_mark_out_notes_${widget.bearingId}', outNotes);
@@ -144,10 +176,10 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final inDate = _bearing?.lastInDate ?? _bearing?.firstInDate;
+    final inDate = _resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate;
     final inTimeStr = inDate != null
         ? '${_formatDate(inDate)}, ${inDate.hour.toString().padLeft(2, '0')}:${inDate.minute.toString().padLeft(2, '0')}'
-        : 'Session Recorded';
+        : '${_formatDate(now)}, ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     
     final durationMonths = _bearing?.warrantyDurationMonths ?? 0;
     DateTime? expiry = _bearing?.warrantyExpiryDate;
@@ -157,8 +189,8 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
     final isWarrantyValid = expiry != null ? expiry.isAfter(now) : !(_bearing?.isWarrantyExpired ?? false);
     final expiryStr = _formatDate(expiry);
 
-    final durationUsed = inDate != null ? now.difference(inDate) : Duration.zero;
-    final operatingDurationStr = inDate != null ? _formatOperatingDuration(durationUsed) : 'Calculating...';
+    final durationUsed = inDate != null ? now.difference(inDate) : const Duration(seconds: 0);
+    final operatingDurationStr = _formatOperatingDuration(durationUsed);
 
     final daysRemaining = expiry?.difference(now).inDays;
     final remainingWarrantyStr = daysRemaining != null
@@ -171,7 +203,6 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
     final modelCode = (rawModel != null && rawModel.isNotEmpty && rawModel != 'PBI-6204-ZZ')
         ? rawModel
         : (itemMaster?.itemCode ?? 'B1');
-    final productName = _bearing?.productName ?? itemMaster?.itemName ?? 'Bearing 1(Ball Bearing)';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -201,7 +232,7 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
                               Text(widget.bearingId, style: AppTypography.headlineSm),
                               const SizedBox(height: 3),
                               Text(
-                                '$modelCode · $productName',
+                                'Item Code: $modelCode',
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w800,
@@ -217,7 +248,6 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
                     ),
                     const Divider(),
                     _buildRow('Item Code / Model No', modelCode, isHeadline: true),
-                    _buildRow('Product Name', productName),
                     _buildRow('Installation Status', 'CURRENTLY IN'),
                     _buildRow('Original IN Date & Time', inTimeStr),
                     _buildRow('Operating Duration So Far', operatingDurationStr, isHeadline: true),
