@@ -130,14 +130,23 @@ class _MarkedOutWarrantyScreenState extends State<MarkedOutWarrantyScreen> {
     }
     final notesSection = notesBuffer.toString();
 
+    final durMonths = b.warrantyDurationMonths;
+    final outDate = b.lastOutDate ?? DateTime.now();
+    final isUnderWarranty = expiry != null ? outDate.isBefore(expiry) : !b.isWarrantyExpired;
+    final operatingStatus = isUnderWarranty
+        ? 'marked out under warranty'
+        : 'marked out after warranty expired';
+
     final message = '''
 *PIVOT BEARINGS INDIA - WARRANTY CLAIM REQUEST*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR Serial:* ${b.id}
 • *Model / Part No:* $modelCode
+• *Warranty Coverage:* $durMonths Months
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $durationStr
+• *Operating Status:* $operatingStatus
 • *Warranty Expiry Date:* $expiryStr
 • *Remaining Warranty:* $daysLeft Days Remaining to Claim$notesSection
 • *Notice:* Bearing removed prior to warranty expiry. Requesting supplier inspection and replacement under official manufacturer warranty terms.

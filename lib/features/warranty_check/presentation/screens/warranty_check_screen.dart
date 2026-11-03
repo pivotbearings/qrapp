@@ -77,11 +77,20 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
     final daysLeft = item.daysLeftToExpiry ?? 0;
     final durStr = _calculateLifecycleDuration(item);
 
+    final durMonths = item.warrantyDurationMonths;
+    final outDate = item.lastOutDate ?? DateTime.now();
+    final expiry = item.warrantyExpiryDate;
+    final isUnderWarranty = expiry != null ? outDate.isBefore(expiry) : !item.isWarrantyExpired;
+    final operatingStatus = isUnderWarranty
+        ? 'marked out under warranty'
+        : 'marked out after warranty expired';
+
     final msg = '''*PIVOT BEARINGS INDIA - WARRANTY CLAIM NOTICE*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR Serial:* ${item.id}
 • *Model / Part No:* $mNumber
-• *Current State:* Marked OUT (Decommissioned)
+• *Warranty Coverage:* $durMonths Months
+• *Operating Status:* $operatingStatus
 • *Warranty Status:* ACTIVE UNDER WARRANTY
 • *Days Remaining:* $daysLeft Days Left
 • *Bearing In (Installed):* $inStr
@@ -100,15 +109,19 @@ Pivot Bearings Authorized Traceability Ledger''';
   }
 
   void _shareExpiredWarrantyOnWhatsApp(BearingModel item) {
+    final durMonths = item.warrantyDurationMonths;
     final inStr = item.firstInDate != null ? _dateFormat.format(item.firstInDate!) : 'N/A';
     final expStr = item.warrantyExpiryDate != null ? _dateFormat.format(item.warrantyExpiryDate!) : 'N/A';
     final outStr = item.lastOutDate != null ? _dateFormat.format(item.lastOutDate!) : 'N/A';
     final durStr = _calculateLifecycleDuration(item);
+    const operatingStatus = 'marked out after warranty expired';
 
     final msg = '''*PIVOT BEARINGS INDIA - EXPIRED WARRANTY RECORD*
 --------------------------------
 *Bearing ID:* ${item.id}
 *Model:* ${item.modelNumber}
+*Warranty Coverage:* $durMonths Months
+*Operating Status:* $operatingStatus
 *Category:* ${item.category}
 *Status:* WARRANTY EXPIRED
 *Warranty Start / In Date:* $inStr

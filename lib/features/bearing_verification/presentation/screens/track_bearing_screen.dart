@@ -3054,6 +3054,25 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     final notesLine = notesBuffer.toString();
 
     final isBearingIn = result.action.toUpperCase() == 'BEARING_IN';
+    final durMonths = result.warrantyDurationMonths ?? 12;
+    final inTime = result.inTimestamp;
+    final outTime = result.outTimestamp ?? DateTime.now();
+
+    DateTime? expiry = result.warrantyExpiryTimestamp;
+    if (expiry == null && inTime != null && durMonths > 0) {
+      expiry = inTime.add(Duration(days: durMonths * 30));
+    }
+
+    final String operatingStatus;
+    if (isBearingIn) {
+      operatingStatus = 'marked in';
+    } else {
+      final isUnderWarranty = expiry != null ? outTime.isBefore(expiry) : result.isUnderWarranty;
+      operatingStatus = isUnderWarranty
+          ? 'marked out under warranty'
+          : 'marked out after warranty expired';
+    }
+
     final resolvedModel = (result.modelNumber != null &&
             result.modelNumber!.isNotEmpty &&
             result.modelNumber != 'PBI-Standard' &&
@@ -3067,8 +3086,9 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR / Serial:* ${result.bearingId ?? 'N/A'}
 • *Model / Part No:* $resolvedModel
+• *Warranty Coverage:* $durMonths Months
 • *Bearing In (Installed):* $inTimeFormatted
-• *Operating Status:* Active (Cycle #${result.cycleNumber})$notesLine
+• *Operating Status:* $operatingStatus$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Bearing Traceability Ledger
 '''.trim();
@@ -3078,10 +3098,11 @@ Official Authorized Bearing Traceability Ledger
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR / Serial:* ${result.bearingId ?? 'N/A'}
 • *Model / Part No:* $resolvedModel
+• *Warranty Coverage:* $durMonths Months
 • *Bearing In (Installed):* $inTimeFormatted
 • *Bearing Out (Removed):* $outTimeFormatted
 • *Total Operating Duration:* $durationClean
-• *Operating Status:* Decommissioned / Final Out$notesLine
+• *Operating Status:* $operatingStatus$notesLine
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Bearing Traceability Ledger
 '''.trim();

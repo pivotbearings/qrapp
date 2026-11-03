@@ -369,15 +369,29 @@ class _OutResultScreenState extends State<OutResultScreen> {
       }
     }
 
+    final durMonths = _bearing?.warrantyDurationMonths ?? 12;
+    final inDate = _resolvedInDate ?? _bearing?.lastInDate ?? _bearing?.firstInDate;
+    final outDate = _resolvedOutDate ?? _bearing?.lastOutDate ?? DateTime.now();
+
+    DateTime? expiry = _bearing?.warrantyExpiryDate;
+    if (inDate != null && durMonths > 0) {
+      expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durMonths);
+    }
+    final isUnderWarranty = expiry != null ? outDate.isBefore(expiry) : !(_bearing?.isWarrantyExpired ?? false);
+    final operatingStatus = isUnderWarranty
+        ? 'marked out under warranty'
+        : 'marked out after warranty expired';
+
     final message = '''
 *PIVOT BEARINGS INDIA - BEARING LIFECYCLE SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 • *Bearing QR Serial:* ${widget.bearingId}
 • *Model / Part No:* $resolvedModel
+• *Warranty Coverage:* $durMonths Months
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $cycleSummary
-• *Operating Status:* Decommissioned / Tracked Out$notesSection
+• *Operating Status:* $operatingStatus$notesSection
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Bearing Traceability & Authenticity Ledger
 '''.trim();
