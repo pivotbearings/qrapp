@@ -453,19 +453,30 @@ class BearingTrackService {
   }
 
   /// Persist or update notes for a bearing
-  static Future<void> saveBearingNotes(String bearingId, String notes) async {
+  static Future<void> saveBearingNotes(String bearingId, String notes, {bool isOut = false}) async {
     final id = _extractBearingId(bearingId);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('pbi_bearing_notes_$id', notes.trim());
+    if (isOut) {
+      await prefs.setString('pbi_bearing_out_notes_$id', notes.trim());
+      await prefs.setString('pbi_mark_out_notes_$id', notes.trim());
+    } else {
+      await prefs.setString('pbi_bearing_in_notes_$id', notes.trim());
+    }
 
     if (SupabaseService.isInitialized) {
       try {
+        final updateMap = <String, dynamic>{
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        if (isOut) {
+          updateMap['out_notes'] = notes.trim();
+        } else {
+          updateMap['in_notes'] = notes.trim();
+        }
         await SupabaseService.client
             .from('qr_codes')
-            .update({
-              'notes': notes.trim(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
+            .update(updateMap)
             .eq('bearing_id', id);
       } catch (e) {
         debugPrint('saveBearingNotes Supabase sync notice: $e');

@@ -192,6 +192,7 @@ class _VerificationEvidenceCaptureScreenState
         if (widget.notes?.trim().isNotEmpty == true) {
           try {
             final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('pbi_bearing_in_notes_${widget.bearingId}', widget.notes!.trim());
             await prefs.setString('pbi_bearing_notes_${widget.bearingId}', widget.notes!.trim());
           } catch (_) {}
         }

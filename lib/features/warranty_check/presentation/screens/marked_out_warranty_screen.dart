@@ -114,10 +114,21 @@ class _MarkedOutWarrantyScreenState extends State<MarkedOutWarrantyScreen> {
     final daysLeft = b.daysLeftToExpiry ?? 0;
 
     final prefs = await SharedPreferences.getInstance();
-    final storedNotes = prefs.getString('pbi_bearing_notes_${b.id}');
-    final notesLine = (storedNotes != null && storedNotes.trim().isNotEmpty)
-        ? '\n• *Customer Notes:* ${storedNotes.trim()}'
-        :   '';
+    final inNotes = prefs.getString('pbi_bearing_in_notes_${b.id}') ??
+        prefs.getString('pbi_bearing_notes_${b.id}') ??
+        b.inNotes;
+    final outNotes = prefs.getString('pbi_bearing_out_notes_${b.id}') ??
+        prefs.getString('pbi_mark_out_notes_${b.id}') ??
+        b.outNotes;
+
+    final notesBuffer = StringBuffer();
+    if (inNotes != null && inNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark In Notes:* ${inNotes.trim()}');
+    }
+    if (outNotes != null && outNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark Out Notes:* ${outNotes.trim()}');
+    }
+    final notesSection = notesBuffer.toString();
 
     final message = '''
 *PIVOT BEARINGS INDIA - WARRANTY CLAIM REQUEST*
@@ -129,7 +140,7 @@ class _MarkedOutWarrantyScreenState extends State<MarkedOutWarrantyScreen> {
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $durationStr
 • *Warranty Expiry Date:* $expiryStr
-• *Remaining Warranty:* $daysLeft Days Remaining to Claim$notesLine
+• *Remaining Warranty:* $daysLeft Days Remaining to Claim$notesSection
 • *Notice:* Bearing removed prior to warranty expiry. Requesting supplier inspection and replacement under official manufacturer warranty terms.
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Warranty Claim Record - Pivot Bearings India

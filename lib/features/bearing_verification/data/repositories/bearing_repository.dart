@@ -17,7 +17,7 @@ abstract class BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload);
   Future<BearingModel?> getBearingById(String id);
   Future<BearingModel> markBearingIn(String id, {String? proofImageHash, String? notes, bool skipRemoteRpc = false});
-  Future<BearingModel> markBearingOut(String id, {String? proofImageHash, bool skipRemoteRpc = false});
+  Future<BearingModel> markBearingOut(String id, {String? proofImageHash, String? outNotes, bool skipRemoteRpc = false});
   Future<List<VerificationEvent>> getEventsForBearing(String bearingId);
   Future<List<BearingModel>> getAllBearings({
     String? customerId,
@@ -542,6 +542,8 @@ class BearingRepositoryImpl implements BearingRepository {
               lastInDate: firstIn,
               lastOutDate: lastOut,
               explicitExpiryDate: expiry,
+              inNotes: summary['in_notes']?.toString() ?? prefs.getString('pbi_bearing_in_notes_$cleanId') ?? prefs.getString('pbi_bearing_notes_$cleanId'),
+              outNotes: summary['out_notes']?.toString() ?? prefs.getString('pbi_bearing_out_notes_$cleanId') ?? prefs.getString('pbi_mark_out_notes_$cleanId'),
             );
             registerInMemoryBearing(resBearing);
             return resBearing;
@@ -654,6 +656,8 @@ class BearingRepositoryImpl implements BearingRepository {
               lastInDate: firstIn,
               lastOutDate: lastOut,
               explicitExpiryDate: expiry,
+              inNotes: summary['in_notes']?.toString() ?? prefs.getString('pbi_bearing_in_notes_$cleanId') ?? prefs.getString('pbi_bearing_notes_$cleanId'),
+              outNotes: summary['out_notes']?.toString() ?? prefs.getString('pbi_bearing_out_notes_$cleanId') ?? prefs.getString('pbi_mark_out_notes_$cleanId'),
             );
             registerInMemoryBearing(resBearing);
             return resBearing;
@@ -842,6 +846,11 @@ class BearingRepositoryImpl implements BearingRepository {
       await prefs.setStringList('pbi_tracked_bearings_list', trackedList);
     }
 
+    if (notes != null && notes.trim().isNotEmpty) {
+      await prefs.setString('pbi_bearing_in_notes_$cleanId', notes.trim());
+      await prefs.setString('pbi_bearing_notes_$cleanId', notes.trim());
+    }
+
     final updated = BearingModel(
       id: existing.id,
       batchCode: existing.batchCode,
@@ -855,6 +864,8 @@ class BearingRepositoryImpl implements BearingRepository {
       assignedCustomerEmail: existing.assignedCustomerEmail ?? AuthController.instance.userEmail,
       plantLocation: existing.plantLocation,
       modelNumber: existing.modelNumber,
+      inNotes: notes?.trim() ?? prefs.getString('pbi_bearing_in_notes_$cleanId') ?? prefs.getString('pbi_bearing_notes_$cleanId'),
+      outNotes: null,
     );
 
     registerInMemoryBearing(updated);
@@ -883,11 +894,17 @@ class BearingRepositoryImpl implements BearingRepository {
   Future<BearingModel> markBearingOut(
     String id, {
     String? proofImageHash,
+    String? outNotes,
     bool skipRemoteRpc = false,
   }) async {
     final cleanId = _extractBearingId(id);
     final now = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
+
+    if (outNotes != null && outNotes.trim().isNotEmpty) {
+      await prefs.setString('pbi_bearing_out_notes_$cleanId', outNotes.trim());
+      await prefs.setString('pbi_mark_out_notes_$cleanId', outNotes.trim());
+    }
 
     // 1. Fetch or gracefully auto-resolve bearing record
     BearingModel? existing = await getBearingById(cleanId);
@@ -932,21 +949,25 @@ class BearingRepositoryImpl implements BearingRepository {
         try {
           await SupabaseService.confirmBearingOut(
             bearingId: cleanId,
-            notes: 'Marked OUT via Pivot Bearings App',
+            notes: outNotes ?? 'Marked OUT via Pivot Bearings App',
           );
         } catch (e) {
           debugPrint('Supabase confirm_bearing_out error, executing direct table fallback: $e');
         }
       }
       try {
+        final updatePayload = <String, dynamic>{
+          'current_lifecycle_state': 'CURRENTLY_OUT',
+          'last_out_timestamp': now.toIso8601String(),
+          'assigned_customer_id': AuthController.instance.userId,
+          'updated_at': now.toIso8601String(),
+        };
+        if (outNotes != null && outNotes.trim().isNotEmpty) {
+          updatePayload['out_notes'] = outNotes.trim();
+        }
         await SupabaseService.client
             .from('qr_codes')
-            .update({
-              'current_lifecycle_state': 'CURRENTLY_OUT',
-              'last_out_timestamp': now.toIso8601String(),
-              'assigned_customer_id': AuthController.instance.userId,
-              'updated_at': now.toIso8601String(),
-            })
+            .update(updatePayload)
             .or('bearing_id.eq.$cleanId,bearing_id.ilike.$cleanId,payload_value.eq.$cleanId');
       } catch (_) {}
     }
@@ -999,6 +1020,8 @@ class BearingRepositoryImpl implements BearingRepository {
       plantLocation: existing.plantLocation,
       modelNumber: existing.modelNumber,
       explicitExpiryDate: existing.warrantyExpiryDate,
+      inNotes: existing.inNotes ?? prefs.getString('pbi_bearing_in_notes_$cleanId') ?? prefs.getString('pbi_bearing_notes_$cleanId'),
+      outNotes: outNotes?.trim() ?? prefs.getString('pbi_bearing_out_notes_$cleanId') ?? prefs.getString('pbi_mark_out_notes_$cleanId'),
     );
 
     registerInMemoryBearing(updated);
@@ -1038,6 +1061,7 @@ class BearingRepositoryImpl implements BearingRepository {
     final isCustomerSession = !auth.isAdmin;
     final effectiveCustomerId = customerId ?? (isCustomerSession ? auth.userId : null);
     final effectiveCustomerEmail = customerEmail ?? (isCustomerSession ? auth.userEmail : null);
+    final prefs = await SharedPreferences.getInstance();
 
     if (SupabaseService.isInitialized) {
       try {
@@ -1090,8 +1114,9 @@ class BearingRepositoryImpl implements BearingRepository {
             if (diff > 0) dur = diff;
           }
 
+          final bId = m['bearing_id']?.toString() ?? '';
           return BearingModel(
-            id: m['bearing_id'],
+            id: bId,
             batchCode: batch?['batch_code'] ?? 'UNKNOWN',
             modelNumber: m['model_number'] ?? 'PBI-MODEL',
             plantLocation: batch?['plant_location'] ?? 'Plant 01',
@@ -1102,6 +1127,8 @@ class BearingRepositoryImpl implements BearingRepository {
             lastInDate: firstIn,
             lastOutDate: lastOut,
             explicitExpiryDate: expiry,
+            inNotes: m['in_notes']?.toString() ?? prefs.getString('pbi_bearing_in_notes_$bId') ?? prefs.getString('pbi_bearing_notes_$bId'),
+            outNotes: m['out_notes']?.toString() ?? prefs.getString('pbi_bearing_out_notes_$bId') ?? prefs.getString('pbi_mark_out_notes_$bId'),
           );
         }).toList();
 

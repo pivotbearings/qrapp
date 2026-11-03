@@ -47,7 +47,24 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
   int _activeFilterTab = 0;
   bool _isCheckingSpecific = false;
 
-  void _shareMarkedOutWarrantyOnWhatsApp(BearingModel item) {
+  void _shareMarkedOutWarrantyOnWhatsApp(BearingModel item) async {
+    final prefs = await SharedPreferences.getInstance();
+    final inNotes = prefs.getString('pbi_bearing_in_notes_${item.id}') ??
+        prefs.getString('pbi_bearing_notes_${item.id}') ??
+        item.inNotes;
+    final outNotes = prefs.getString('pbi_bearing_out_notes_${item.id}') ??
+        prefs.getString('pbi_mark_out_notes_${item.id}') ??
+        item.outNotes;
+
+    final notesBuffer = StringBuffer();
+    if (inNotes != null && inNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark In Notes:* ${inNotes.trim()}');
+    }
+    if (outNotes != null && outNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark Out Notes:* ${outNotes.trim()}');
+    }
+    final notesSection = notesBuffer.toString();
+
     final itemMaster = ItemMasterRepository().findByCode(item.modelNumber);
     final pName = item.productName ?? itemMaster?.itemName ?? 'Bearing 1(Ball Bearing)';
     final mNumber = (item.modelNumber.isNotEmpty && item.modelNumber != 'PBI-6204-ZZ')
@@ -70,7 +87,7 @@ class _WarrantyCheckScreenState extends State<WarrantyCheckScreen> {
 • *Bearing In (Installed):* $inStr
 • *Bearing Out (Removed):* $outStr
 • *Operating Duration:* $durStr
-• *Warranty Expiry Date:* $expStr
+• *Warranty Expiry Date:* $expStr$notesSection
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 *Claim Note:* Product was decommissioned prior to warranty expiry. Submitting official claim request with supplier as per warranty terms.
 Pivot Bearings Authorized Traceability Ledger''';

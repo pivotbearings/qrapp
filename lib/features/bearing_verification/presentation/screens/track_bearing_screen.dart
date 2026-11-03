@@ -3037,12 +3037,21 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         .replaceAll('.', '');
 
     final prefs = await SharedPreferences.getInstance();
-    final storedNotes = (result.notes != null && result.notes!.trim().isNotEmpty)
-        ? result.notes!.trim()
-        : (prefs.getString('pbi_bearing_notes_${result.bearingId}') ??
-            prefs.getString('pbi_bearing_notes_${result.rawPayload}') ??
-            '');
-    final notesLine = (storedNotes.isNotEmpty) ? '\n• *Notes:* $storedNotes' : '';
+    final inNotes = prefs.getString('pbi_bearing_in_notes_${result.bearingId}') ??
+        prefs.getString('pbi_bearing_notes_${result.bearingId}') ??
+        (result.action.toUpperCase() == 'BEARING_IN' ? result.notes : null);
+    final outNotes = prefs.getString('pbi_bearing_out_notes_${result.bearingId}') ??
+        prefs.getString('pbi_mark_out_notes_${result.bearingId}') ??
+        (result.action.toUpperCase() != 'BEARING_IN' ? result.notes : null);
+
+    final notesBuffer = StringBuffer();
+    if (inNotes != null && inNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark In Notes:* ${inNotes.trim()}');
+    }
+    if (outNotes != null && outNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark Out Notes:* ${outNotes.trim()}');
+    }
+    final notesLine = notesBuffer.toString();
 
     final isBearingIn = result.action.toUpperCase() == 'BEARING_IN';
     final resolvedModel = (result.modelNumber != null &&

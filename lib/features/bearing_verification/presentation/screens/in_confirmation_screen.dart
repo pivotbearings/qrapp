@@ -124,6 +124,7 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
     final notes = _notesController.text.trim();
     if (notes.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pbi_bearing_in_notes_${widget.bearingId}', notes);
       await prefs.setString('pbi_bearing_notes_${widget.bearingId}', notes);
     }
     if (!mounted) return;

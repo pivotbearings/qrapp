@@ -28,6 +28,8 @@ class OutResultScreen extends StatefulWidget {
 
 class _OutResultScreenState extends State<OutResultScreen> {
   BearingModel? _bearing;
+  String? _inNotes;
+  String? _outNotes;
 
   @override
   void initState() {
@@ -37,9 +39,19 @@ class _OutResultScreenState extends State<OutResultScreen> {
 
   Future<void> _loadBearing() async {
     final b = await BearingRepositoryImpl().getBearingById(widget.bearingId);
+    final prefs = await SharedPreferences.getInstance();
+    final inN = prefs.getString('pbi_bearing_in_notes_${widget.bearingId}') ??
+        prefs.getString('pbi_bearing_notes_${widget.bearingId}') ??
+        b?.inNotes;
+    final outN = prefs.getString('pbi_bearing_out_notes_${widget.bearingId}') ??
+        prefs.getString('pbi_mark_out_notes_${widget.bearingId}') ??
+        b?.outNotes;
+
     if (mounted) {
       setState(() {
         _bearing = b;
+        _inNotes = inN;
+        _outNotes = outN;
       });
     }
   }
@@ -112,6 +124,21 @@ class _OutResultScreenState extends State<OutResultScreen> {
     if (inDate != null && durationMonths > 0) {
       expiry = WarrantyCalculator.calculateExpiryDate(firstInDate: inDate, durationMonths: durationMonths);
     }
+
+    // Resolve authentic model and product name
+    var resolvedModel = _bearing?.modelNumber;
+    if (resolvedModel == null || resolvedModel.isEmpty || resolvedModel == 'PBI-Standard' || resolvedModel == 'PBI-6204-ZZ') {
+      final b1Item = ItemMasterRepository().findByCode('B1');
+      if (b1Item != null) {
+        resolvedModel = 'B1';
+      } else {
+        resolvedModel = _bearing?.modelNumber ?? 'B1';
+      }
+    }
+    final item = ItemMasterRepository().findByCode(resolvedModel) ?? ItemMasterRepository().findByCode('B1');
+    final pName = _bearing?.productName ??
+        item?.itemName ??
+        'Bearing 1(Ball Bearing)';
 
     // Warranty status judged authoritatively against OUT timestamp, not current time
     final isWarrantyValid = expiry != null ? expiry.isAfter(outDate) : !(_bearing?.isWarrantyExpired ?? false);
@@ -198,6 +225,10 @@ class _OutResultScreenState extends State<OutResultScreen> {
                   children: [
                     _buildRow('Bearing ID', widget.bearingId, isMono: true),
                     const Divider(),
+                    _buildRow('Item Code / Model No', resolvedModel),
+                    const Divider(),
+                    _buildRow('Assigned Product', pName),
+                    const Divider(),
                     _buildRow('Installation (IN) Timestamp', inDateStr),
                     const Divider(),
                     _buildRow('Removal (OUT) Timestamp', outDateStr),
@@ -207,6 +238,14 @@ class _OutResultScreenState extends State<OutResultScreen> {
                     _buildRow('Warranty Status at Removal', warrantyStatusStr),
                     const Divider(),
                     _buildRow('Remaining Warranty Balance', remainingBalanceStr, isHeadline: true),
+                    if (_inNotes != null && _inNotes!.trim().isNotEmpty) ...[
+                      const Divider(),
+                      _buildRow('Mark In Notes', _inNotes!.trim()),
+                    ],
+                    if (_outNotes != null && _outNotes!.trim().isNotEmpty) ...[
+                      const Divider(),
+                      _buildRow('Mark Out Notes', _outNotes!.trim()),
+                    ],
                     const SizedBox(height: AppDimensions.spaceSm),
                     const Text('Terminal Lifecycle Rule', style: AppTypography.caption),
                     const SizedBox(height: 2),
@@ -274,10 +313,23 @@ class _OutResultScreenState extends State<OutResultScreen> {
     required String warrantyStatusStr,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final storedNotes = prefs.getString('pbi_bearing_notes_${widget.bearingId}');
-    final notesLine = (storedNotes != null && storedNotes.trim().isNotEmpty)
-        ? '\n• *Notes:* ${storedNotes.trim()}'
-        : '';
+    final inNotes = prefs.getString('pbi_bearing_in_notes_${widget.bearingId}') ??
+        prefs.getString('pbi_bearing_notes_${widget.bearingId}') ??
+        _inNotes ??
+        _bearing?.inNotes;
+    final outNotes = prefs.getString('pbi_bearing_out_notes_${widget.bearingId}') ??
+        prefs.getString('pbi_mark_out_notes_${widget.bearingId}') ??
+        _outNotes ??
+        _bearing?.outNotes;
+
+    final notesBuffer = StringBuffer();
+    if (inNotes != null && inNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark In Notes:* ${inNotes.trim()}');
+    }
+    if (outNotes != null && outNotes.trim().isNotEmpty) {
+      notesBuffer.write('\n• *Mark Out Notes:* ${outNotes.trim()}');
+    }
+    final notesSection = notesBuffer.toString();
 
     // Resolve authentic model and product name
     var resolvedModel = _bearing?.modelNumber;
@@ -304,7 +356,7 @@ class _OutResultScreenState extends State<OutResultScreen> {
 • *Bearing In (Installed):* $inDateStr
 • *Bearing Out (Removed):* $outDateStr
 • *Total Operating Duration:* $cycleSummary
-• *Operating Status:* Decommissioned / Tracked Out$notesLine
+• *Operating Status:* Decommissioned / Tracked Out$notesSection
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 Official Authorized Bearing Traceability & Authenticity Ledger
 '''.trim();

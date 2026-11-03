@@ -26,6 +26,8 @@ class BearingModel {
   final String? facilityCode;
   final String? lastProofImageHash;
   final DateTime? explicitExpiryDate;
+  final String? inNotes;
+  final String? outNotes;
 
   const BearingModel({
     required this.id,
@@ -45,6 +47,8 @@ class BearingModel {
     this.facilityCode,
     this.lastProofImageHash,
     this.explicitExpiryDate,
+    this.inNotes,
+    this.outNotes,
   });
 
   bool get isActivated => firstInDate != null;
@@ -183,6 +187,8 @@ class BearingModel {
       'facility_code': facilityCode,
       'last_proof_image_hash': lastProofImageHash,
       'explicit_expiry_date': (explicitExpiryDate ?? warrantyExpiryDate)?.toIso8601String(),
+      'in_notes': inNotes,
+      'out_notes': outNotes,
     };
   }
 
@@ -217,6 +223,8 @@ class BearingModel {
       explicitExpiryDate: (json['explicit_expiry_date'] ?? json['warranty_expiry_timestamp']) != null
           ? DateTime.tryParse((json['explicit_expiry_date'] ?? json['warranty_expiry_timestamp']).toString())?.toLocal()
           : null,
+      inNotes: json['in_notes']?.toString() ?? json['notes']?.toString(),
+      outNotes: json['out_notes']?.toString(),
     );
   }
 }

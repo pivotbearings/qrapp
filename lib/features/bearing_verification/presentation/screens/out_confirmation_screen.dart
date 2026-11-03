@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -13,6 +14,7 @@ import '../../../../core/widgets/app_snack_bar.dart';
 import '../../data/models/bearing_model.dart';
 import '../../data/repositories/bearing_repository.dart';
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
+import '../../../item_master/data/repositories/item_master_repository.dart';
 import '../../domain/services/warranty_calculator.dart';
 
 class OutConfirmationScreen extends StatefulWidget {
@@ -28,6 +30,7 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   BearingModel? _bearing;
   bool _isProcessing = false;
   Timer? _liveTicker;
+  final TextEditingController _outNotesController = TextEditingController();
 
   @override
   void initState() {
@@ -41,6 +44,7 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   @override
   void dispose() {
     _liveTicker?.cancel();
+    _outNotesController.dispose();
     super.dispose();
   }
 
@@ -75,8 +79,19 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
     if (_isProcessing) return; // Prevent duplicate clicks!
     setState(() => _isProcessing = true);
 
+    final outNotes = _outNotesController.text.trim();
+
     try {
-      await BearingRepositoryImpl().markBearingOut(widget.bearingId);
+      final prefs = await SharedPreferences.getInstance();
+      if (outNotes.isNotEmpty) {
+        await prefs.setString('pbi_bearing_out_notes_${widget.bearingId}', outNotes);
+        await prefs.setString('pbi_mark_out_notes_${widget.bearingId}', outNotes);
+      }
+
+      await BearingRepositoryImpl().markBearingOut(
+        widget.bearingId,
+        outNotes: outNotes.isNotEmpty ? outNotes : null,
+      );
       if (!mounted) return;
 
       Navigator.pushReplacementNamed(
@@ -150,6 +165,14 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
         ? (daysRemaining > 0 ? '$daysRemaining Days Remaining' : '0 Days (Expired)')
         : 'Active Coverage';
 
+    final qrRec = QrManagementRepository.findQrRecord(widget.bearingId);
+    final rawModel = _bearing?.modelNumber ?? qrRec?['model_number']?.toString();
+    final itemMaster = ItemMasterRepository().findByCode(rawModel ?? '');
+    final modelCode = (rawModel != null && rawModel.isNotEmpty && rawModel != 'PBI-6204-ZZ')
+        ? rawModel
+        : (itemMaster?.itemCode ?? 'B1');
+    final productName = _bearing?.productName ?? itemMaster?.itemName ?? 'Bearing 1(Ball Bearing)';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: const IndustrialAppBar(title: 'Bearing Lifecycle'),
@@ -169,12 +192,32 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(widget.bearingId, style: AppTypography.headlineSm),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(widget.bearingId, style: AppTypography.headlineSm),
+                              const SizedBox(height: 3),
+                              Text(
+                                '$modelCode · $productName',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         const IndustrialStatusBadge(statusText: '[STATUS: CURRENTLY IN]'),
                       ],
                     ),
                     const Divider(),
+                    _buildRow('Item Code / Model No', modelCode, isHeadline: true),
+                    _buildRow('Product Name', productName),
                     _buildRow('Installation Status', 'CURRENTLY IN'),
                     _buildRow('Original IN Date & Time', inTimeStr),
                     _buildRow('Operating Duration So Far', operatingDurationStr, isHeadline: true),
@@ -212,6 +255,40 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
                       style: AppTypography.bodySm,
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: AppDimensions.spaceMd),
+
+              // Mark Out Notes (Minimalistic & Simple Layout)
+              TextFormField(
+                controller: _outNotesController,
+                maxLines: 3,
+                minLines: 1,
+                style: AppTypography.bodyMd.copyWith(color: Colors.black87),
+                decoration: InputDecoration(
+                  hintText: 'mark out notes',
+                  hintStyle: AppTypography.bodyMd.copyWith(color: Colors.black38),
+                  prefixIcon: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Icon(Icons.edit_note_rounded, color: AppColors.primary, size: 22),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                    borderSide: const BorderSide(color: AppColors.border, width: 1.2),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                    borderSide: const BorderSide(color: AppColors.border, width: 1.2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
                 ),
               ),
 
