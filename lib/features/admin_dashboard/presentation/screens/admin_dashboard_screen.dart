@@ -16,6 +16,7 @@ import '../views/admin_role_assignment_view.dart';
 import '../views/admin_settings_view.dart';
 import '../views/admin_warranty_analytics_view.dart';
 import '../views/admin_rewards_view.dart';
+import '../../../../core/widgets/reward_icon.dart';
 
 /// Enterprise Admin Workstation for Pivot Bearings India
 /// Clean, minimalistic, strictly responsive on both Desktop/Web and Mobile/App.
@@ -364,11 +365,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          tab.icon,
-                          color: isSelected ? AppColors.background : AppColors.primary,
-                          size: 16,
-                        ),
+                        tab.title == 'Reward Points'
+                            ? RewardIcon(
+                                color: isSelected ? AppColors.background : AppColors.primary,
+                                size: 16,
+                              )
+                            : Icon(
+                                tab.icon,
+                                color: isSelected ? AppColors.background : AppColors.primary,
+                                size: 16,
+                              ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -486,11 +492,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            tab.icon,
-                            color: isSelected ? AppColors.background : AppColors.primary,
-                            size: 18,
-                          ),
+                          tab.title == 'Reward Points'
+                              ? RewardIcon(
+                                  color: isSelected ? AppColors.background : AppColors.primary,
+                                  size: 18,
+                                )
+                              : Icon(
+                                  tab.icon,
+                                  color: isSelected ? AppColors.background : AppColors.primary,
+                                  size: 18,
+                                ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(

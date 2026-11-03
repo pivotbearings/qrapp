@@ -16,6 +16,7 @@ import '../../../bearing_verification/data/repositories/bearing_repository.dart'
 import '../../../bearing_verification/data/services/bearing_track_service.dart';
 import '../../../rewards/data/services/reward_service.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
+import '../../../../core/widgets/reward_icon.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({super.key});
@@ -615,10 +616,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: const Center(
-                  child: Icon(
-                    Icons.stars,
+                  child: RewardIcon(
                     color: Colors.white,
-                    size: 26,
+                    size: 24,
                   ),
                 ),
               ),
@@ -876,7 +876,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               child: _buildWarrantySummaryCard(
                 title: 'Under Warranty',
                 count: '$_underWarrantyCount',
-                icon: Icons.shield_rounded,
+                icon: Icons.verified_user,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 1).then((_) => _loadDashboardData()),
               ),
             ),
@@ -885,7 +885,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               child: _buildWarrantySummaryCard(
                 title: 'Expiring Soon',
                 count: '$_expiringSoonCount',
-                icon: Icons.timer_outlined,
+                icon: Icons.schedule,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 2).then((_) => _loadDashboardData()),
               ),
             ),
@@ -894,7 +894,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               child: _buildWarrantySummaryCard(
                 title: 'Warranty Expired',
                 count: '$_expiredWarrantyCount',
-                icon: Icons.history_rounded,
+                icon: Icons.history,
                 onTap: () => Navigator.pushNamed(context, AppRoutes.warrantyCheck, arguments: 3).then((_) => _loadDashboardData()),
               ),
             ),
@@ -920,7 +920,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     color: AppColors.primary.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.assignment_turned_in_rounded, size: 18, color: AppColors.primary),
+                  child: const Icon(Icons.verified, size: 18, color: AppColors.primary),
                 ),
                 const SizedBox(width: 10),
                 Expanded(

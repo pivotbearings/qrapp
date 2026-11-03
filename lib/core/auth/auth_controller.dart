@@ -261,6 +261,36 @@ class AuthController extends ChangeNotifier {
           await _persistSession();
           notifyListeners();
         }
+      } else if (SupabaseService.isInitialized) {
+        // Initial profile creation for OAuth (Google Sign-In) users
+        final email = _userEmail ?? '';
+        final name = _userName ?? 'Operator';
+        try {
+          await SupabaseService.client.from('profiles').insert({
+            'id': uid,
+            'email': email,
+            'full_name': name,
+            'company_name': _userCompany ?? 'Enterprise User',
+            'phone': _userPhone ?? '',
+            'facility_code': 'FAC-USR',
+            'is_approved': true,
+            'is_active': true,
+            'has_warranty_access': false,
+            'has_track_bearing_access': false,
+            'is_reward_eligible': true,
+          });
+          try {
+            await SupabaseService.client.from('user_roles').insert({
+              'user_id': uid,
+              'role': 'USER',
+            });
+          } catch (_) {}
+          _isApproved = true;
+          _isRewardEligible = true;
+          await _persistSession();
+        } catch (e) {
+          debugPrint('Notice creating initial OAuth profile: $e');
+        }
       }
     } catch (e) {
       debugPrint('Notice: profile metadata query: $e');
@@ -589,6 +619,31 @@ class AuthController extends ChangeNotifier {
       }
     } catch (e) {
       _resetToUnauthenticated();
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Sign in or Sign up with Google OAuth
+  Future<bool> signInWithGoogle() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      if (!SupabaseService.isInitialized) {
+        await SupabaseService.initialize();
+      }
+
+      if (!SupabaseService.isInitialized) {
+        throw Exception('Unable to reach Supabase backend. Please check network connection.');
+      }
+
+      final initiated = await SupabaseService.signInWithGoogle();
+      return initiated;
+    } catch (e) {
+      debugPrint('Google Sign-In error: $e');
       rethrow;
     } finally {
       _isLoading = false;

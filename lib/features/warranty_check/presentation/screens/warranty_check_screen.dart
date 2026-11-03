@@ -257,10 +257,6 @@ Pivot Bearings India''';
           _showWarrantyDiagnosticModal(existing, null);
           return;
         } else if (isLocallyIn || existing.state == BearingLifecycleState.currentlyIn) {
-          AppSnackBar.showSuccess(
-            context,
-            'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
-          );
           Navigator.pushNamed(
             context,
             AppRoutes.outConfirmation,
@@ -345,10 +341,6 @@ Pivot Bearings India''';
             _showWarrantyDiagnosticModal(b, verifResult);
             return;
           } else if (isIn) {
-            AppSnackBar.showSuccess(
-              context,
-              'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
-            );
             Navigator.pushNamed(
               context,
               AppRoutes.outConfirmation,
@@ -510,77 +502,28 @@ Pivot Bearings India''';
                       ),
                       const SizedBox(height: 16),
 
-                      // Track In and Track Out Action Buttons (Scan QR based)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0D8A4E),
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                minimumSize: const Size.fromHeight(46),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(50),
-                                ),
-                              ),
-                              icon: const Icon(Icons.login_rounded, size: 18),
-                              label: const Text(
-                                'TRACK IN',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5),
-                              ),
-                              onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFDC2626),
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                minimumSize: const Size.fromHeight(46),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(50),
-                                ),
-                              ),
-                              icon: const Icon(Icons.logout_rounded, size: 18),
-                              label: const Text(
-                                'TRACK OUT',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5),
-                              ),
-                              onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Action 2: Scan QR to Search / Audit
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary, width: 1.4),
-                          minimumSize: const Size.fromHeight(44),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      // Universal Action Button for Mark Bearing IN / OUT
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 1.5,
+                          minimumSize: const Size.fromHeight(48),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(50),
                           ),
                         ),
-                        icon: const Icon(Icons.qr_code_scanner, size: 18),
-                        label: Text(
-                          'SCAN QR TO AUDIT / SEARCH',
-                          style: AppTypography.labelMd.copyWith(
-                            color: AppColors.primary,
+                        icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                        label: const Text(
+                          'SCAN FOR MARK BEARING IN / OUT',
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
+                            fontSize: 13,
                             letterSpacing: 0.5,
-                            fontSize: 12,
                           ),
-                          textAlign: TextAlign.center,
                         ),
-                        onPressed: _openQrScanner,
+                        onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
                       ),
                       const SizedBox(height: 12),
 

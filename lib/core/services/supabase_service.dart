@@ -232,6 +232,18 @@ class SupabaseService {
     return await client.auth.signInWithPassword(email: email, password: password);
   }
 
+  /// Authenticates or registers user via Google OAuth
+  static Future<bool> signInWithGoogle() async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+    if (!_isInitialized) return false;
+    return await client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? null : 'io.supabase.pivotbearings://login-callback',
+    );
+  }
+
   /// Registers user with initial profile metadata
   static Future<AuthResponse?> signUpWithEmailPassword({
     required String email,

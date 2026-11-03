@@ -5,6 +5,7 @@ import '../../../../core/constants/app_typography.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../data/services/reward_service.dart';
 import '../../domain/models/reward_models.dart';
+import '../../../../core/widgets/reward_icon.dart';
 
 /// Modal dialog for claiming bearing reward points with mandatory supplier details.
 class ClaimRewardPointsDialog extends StatefulWidget {
@@ -106,8 +107,7 @@ class _ClaimRewardPointsDialogState extends State<ClaimRewardPointsDialog> {
               color: AppColors.primary.withAlpha(20),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.stars_rounded,
+            child: const RewardIcon(
               color: AppColors.primary,
               size: 24,
             ),

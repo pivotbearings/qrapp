@@ -68,10 +68,6 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
     // If bearing is already marked IN, auto-route to Mark Bearing OUT
     if (isIn && !isOut) {
       if (mounted) {
-        AppSnackBar.showSuccess(
-          context,
-          'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
-        );
         Navigator.pushReplacementNamed(
           context,
           AppRoutes.outConfirmation,
@@ -109,10 +105,6 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
 
     if (isCurrentlyIn) {
       if (mounted) {
-        AppSnackBar.showSuccess(
-          context,
-          'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
-        );
         Navigator.pushReplacementNamed(
           context,
           AppRoutes.outConfirmation,

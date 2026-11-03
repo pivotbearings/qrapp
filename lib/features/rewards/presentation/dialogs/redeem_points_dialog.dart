@@ -5,6 +5,7 @@ import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../domain/models/reward_models.dart';
 import '../../data/services/reward_service.dart';
+import '../../../../core/widgets/reward_icon.dart';
 
 /// Pivot Bearings India - Redeem Points Dialog
 ///
@@ -161,7 +162,7 @@ class _RedeemPointsDialogState extends State<RedeemPointsDialog> {
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.stars, color: Colors.white, size: 24),
+                      child: const RewardIcon(color: Colors.white, size: 24),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

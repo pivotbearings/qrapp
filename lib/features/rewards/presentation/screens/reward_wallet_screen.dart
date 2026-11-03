@@ -8,6 +8,7 @@ import '../../../../core/widgets/app_snack_bar.dart';
 import '../../domain/models/reward_models.dart';
 import '../../data/services/reward_service.dart';
 import '../dialogs/redeem_points_dialog.dart';
+import '../../../../core/widgets/reward_icon.dart';
 
 /// Pivot Bearings India - User Reward Points Wallet & Payout Center
 ///
@@ -254,7 +255,7 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
             children: [
               const Row(
                 children: [
-                  Icon(Icons.stars, color: Colors.white, size: 22),
+                  RewardIcon(color: Colors.white, size: 20),
                   SizedBox(width: 8),
                   Text(
                     'PIVOT REWARD WALLET',

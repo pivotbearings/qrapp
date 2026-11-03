@@ -70,13 +70,9 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
       await prefs.setString('pbi_track_in_time_$cleanId', inDt.toIso8601String());
     }
 
-    // AUTO-MODE: If bearing was never marked IN, auto-switch to Mark Bearing IN
+    // AUTO-MODE: If bearing was never marked IN, route to Mark Bearing IN
     if (b?.state == BearingLifecycleState.notActivated) {
       if (mounted) {
-        AppSnackBar.showInfo(
-          context,
-          'Bearing is not marked IN yet. Automatically switched to Mark Bearing IN.',
-        );
         Navigator.pushReplacementNamed(
           context,
           AppRoutes.inConfirmation,

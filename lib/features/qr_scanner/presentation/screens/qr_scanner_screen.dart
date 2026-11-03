@@ -179,10 +179,6 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       if (!mounted) return;
       if (isCurrentlyIn) {
         // Direct Layout: Bearing is already marked IN -> Open direct Mark Bearing OUT screen immediately
-        AppSnackBar.showSuccess(
-          context,
-          'Bearing is already marked IN. Automatically switched to Mark Bearing OUT.',
-        );
         Navigator.pushNamed(
           context,
           AppRoutes.outConfirmation,

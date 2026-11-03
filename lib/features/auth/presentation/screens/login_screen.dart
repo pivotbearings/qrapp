@@ -8,6 +8,7 @@ import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/google_password_saver.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
+import '../../../../core/widgets/google_icon.dart';
 import '../../../../core/widgets/industrial_app_bar.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -37,7 +38,20 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _signupPasswordVisible = false;
 
   @override
+  void initState() {
+    super.initState();
+    AuthController.instance.addListener(_onAuthStateChanged);
+  }
+
+  void _onAuthStateChanged() {
+    if (mounted && AuthController.instance.isAuthenticated) {
+      _routeAfterLogin();
+    }
+  }
+
+  @override
   void dispose() {
+    AuthController.instance.removeListener(_onAuthStateChanged);
     _loginEmailCtrl.dispose();
     _loginPassCtrl.dispose();
     _signUpCompanyCtrl.dispose();
@@ -53,6 +67,33 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
     } else {
       Navigator.pushReplacementNamed(context, AppRoutes.customerHome);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+
+    try {
+      final initiated = await AuthController.instance.signInWithGoogle();
+      if (!initiated && mounted) {
+        setState(() {
+          _errorMessage = 'Could not launch Google Sign-In. Please check your network connection.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -483,6 +524,91 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Widget _buildOrDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              color: AppColors.primary.withValues(alpha: 0.2),
+              thickness: 1,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text(
+              'OR',
+              style: AppTypography.labelSm.copyWith(
+                color: AppColors.primary.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              color: AppColors.primary.withValues(alpha: 0.2),
+              thickness: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoogleAuthButton({
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: OutlinedButton(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.pressed)) {
+              return AppColors.primary.withValues(alpha: 0.05);
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return AppColors.primary.withValues(alpha: 0.02);
+            }
+            return AppColors.surface;
+          }),
+          foregroundColor: WidgetStateProperty.all(AppColors.primary),
+          side: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.hovered) || states.contains(WidgetState.pressed)) {
+              return const BorderSide(color: AppColors.primary, width: 1.8);
+            }
+            return BorderSide(color: AppColors.primary.withValues(alpha: 0.25), width: 1.5);
+          }),
+          elevation: WidgetStateProperty.all(0),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(50),
+            ),
+          ),
+        ),
+        onPressed: _isLoading ? null : onPressed,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const GoogleIcon(size: 22),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: AppTypography.labelMd.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSignInForm() {
     return AutofillGroup(
       child: Column(
@@ -562,6 +688,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
             ),
+          ),
+          _buildOrDivider(),
+          _buildGoogleAuthButton(
+            label: 'Sign in with Google',
+            onPressed: _handleGoogleSignIn,
           ),
         ],
       ),
@@ -661,6 +792,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
             ),
+          ),
+          _buildOrDivider(),
+          _buildGoogleAuthButton(
+            label: 'Sign up with Google',
+            onPressed: _handleGoogleSignIn,
           ),
         ],
       ),
