@@ -175,9 +175,14 @@ class _QrScannerScreenState extends State<QrScannerScreen>
           result.status == QrVerificationStatus.validWarrantyActive ||
           result.firstInTimestamp != null) && !isDecommissioned;
 
+      final isActionableValid = !result.isInvalid &&
+          result.status != QrVerificationStatus.qrUnknownOrInvalid &&
+          result.status != QrVerificationStatus.qrBlocked &&
+          result.status != QrVerificationStatus.networkUnavailable;
+
       // --- ROUTE DIRECTLY TO FULL SCREEN FLOW ON VALID SCAN ---
       if (!mounted) return;
-      if (isCurrentlyIn) {
+      if (isActionableValid && isCurrentlyIn) {
         // Direct Layout: Bearing is already marked IN -> Open direct Mark Bearing OUT screen immediately
         Navigator.pushNamed(
           context,
@@ -185,7 +190,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
           arguments: result.bearingId ?? cleanId,
         ).then((_) => _resumeScanning());
         return;
-      } else if (!isDecommissioned) {
+      } else if (isActionableValid && !isDecommissioned) {
         // Direct Layout: Bearing is ready for installation -> Open Mark Bearing IN directly
         Navigator.pushNamed(
           context,
@@ -247,7 +252,6 @@ class _QrScannerScreenState extends State<QrScannerScreen>
               controller: controller,
               label: 'Bearing Serial / QR ID',
               hintText: 'e.g. PB-1001-AA',
-              uppercase: true,
             ),
           ],
         ),
@@ -262,7 +266,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
           IndustrialButton(
             label: 'Verify',
             onPressed: () {
-              final id = controller.text.trim().toUpperCase();
+              final id = controller.text.trim();
               Navigator.pop(ctx);
               if (id.isNotEmpty) _processScannedPayload(id);
             },

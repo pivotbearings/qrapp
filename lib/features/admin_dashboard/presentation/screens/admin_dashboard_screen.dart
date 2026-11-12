@@ -33,7 +33,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   final List<_NavTabItem> _navigationTabs = const [
     _NavTabItem(title: 'Dashboard', icon: Icons.grid_view, subtitle: 'Real-time Telemetry'),
-    _NavTabItem(title: 'Role Assignment', icon: Icons.admin_panel_settings, subtitle: 'User Clearance & Permissions'),
+    _NavTabItem(title: 'Role Assignment', icon: Icons.admin_panel_settings, subtitle: 'User Roles & Permissions'),
     _NavTabItem(title: 'QR Generation', icon: Icons.qr_code_2, subtitle: 'Batch Creation Engine'),
     _NavTabItem(title: 'Item Master', icon: Icons.precision_manufacturing, subtitle: 'Catalog & Specifications'),
     _NavTabItem(title: 'QR Registry', icon: Icons.inventory_2, subtitle: 'Search, Block & Exports'),

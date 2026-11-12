@@ -19,6 +19,7 @@ import '../../../bearing_verification/domain/services/warranty_calculator.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/services/anti_fraud_service.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
+import '../../../rewards/data/services/reward_service.dart';
 
 class WarrantyCheckScreen extends StatefulWidget {
   final String? initialBearingId;
@@ -249,26 +250,51 @@ Pivot Bearings India''';
     if (existing != null) {
       if (fromScan) {
         if (!mounted) return;
-        if (isLocallyOut || existing.state == BearingLifecycleState.currentlyOut) {
+        final isOut = isLocallyOut || existing.state == BearingLifecycleState.currentlyOut;
+        if (isOut) {
           AppSnackBar.showError(
             context,
             'Bearing has already been marked OUT and is permanently decommissioned.',
           );
           _showWarrantyDiagnosticModal(existing, null);
           return;
-        } else if (isLocallyIn || existing.state == BearingLifecycleState.currentlyIn) {
+        }
+
+        if (AuthController.instance.isRewardEligible) {
+          try {
+            final claim = await RewardService.claimBearingScanReward(
+              rawPayloadOrId: existing.id,
+              sourceModule: 'WARRANTY_SCAN',
+            );
+            if (mounted && claim.rewardAwarded) {
+              AppSnackBar.showSuccess(
+                context,
+                '🎉 1st Scan Reward: +${claim.pointsEarned} Points Credited!',
+              );
+            }
+          } catch (_) {}
+        }
+
+        if (!mounted) return;
+        if (isLocallyIn || existing.state == BearingLifecycleState.currentlyIn) {
           Navigator.pushNamed(
             context,
             AppRoutes.outConfirmation,
             arguments: existing.id,
-          ).then((_) => _loadUserBearings());
+          ).then((_) {
+            _loadUserBearings();
+            RewardService.fetchUserRewardProfile();
+          });
           return;
         } else {
           Navigator.pushNamed(
             context,
             AppRoutes.inConfirmation,
             arguments: existing.id,
-          ).then((_) => _loadUserBearings());
+          ).then((_) {
+            _loadUserBearings();
+            RewardService.fetchUserRewardProfile();
+          });
           return;
         }
       }
@@ -320,6 +346,13 @@ Pivot Bearings India''';
           _isCheckingSpecific = false;
         });
 
+        if (verifResult.rewardClaim?.rewardAwarded == true) {
+          AppSnackBar.showSuccess(
+            context,
+            '🎉 1st Scan Reward: +${verifResult.rewardClaim!.pointsEarned} Points Credited!',
+          );
+        }
+
         if (fromScan) {
           if (!mounted) return;
           final isOut = isLocallyOut ||
@@ -333,6 +366,11 @@ Pivot Bearings India''';
               verifResult.currentLifecycleState == 'CURRENTLY_IN' ||
               verifResult.canMarkOut) && !isOut;
 
+          final isActionableValid = !verifResult.isInvalid &&
+              verifResult.status != QrVerificationStatus.qrUnknownOrInvalid &&
+              verifResult.status != QrVerificationStatus.qrBlocked &&
+              verifResult.status != QrVerificationStatus.networkUnavailable;
+
           if (isOut) {
             AppSnackBar.showError(
               context,
@@ -340,19 +378,25 @@ Pivot Bearings India''';
             );
             _showWarrantyDiagnosticModal(b, verifResult);
             return;
-          } else if (isIn) {
+          } else if (isActionableValid && isIn) {
             Navigator.pushNamed(
               context,
               AppRoutes.outConfirmation,
               arguments: b.id,
-            ).then((_) => _loadUserBearings());
+            ).then((_) {
+              _loadUserBearings();
+              RewardService.fetchUserRewardProfile();
+            });
             return;
-          } else if (verifResult.canMarkIn || b.state == BearingLifecycleState.notActivated) {
+          } else if (isActionableValid && (verifResult.canMarkIn || b.state == BearingLifecycleState.notActivated)) {
             Navigator.pushNamed(
               context,
               AppRoutes.inConfirmation,
               arguments: b.id,
-            ).then((_) => _loadUserBearings());
+            ).then((_) {
+              _loadUserBearings();
+              RewardService.fetchUserRewardProfile();
+            });
             return;
           }
         }
@@ -523,7 +567,10 @@ Pivot Bearings India''';
                             letterSpacing: 0.5,
                           ),
                         ),
-                        onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner),
+                        onPressed: () => Navigator.pushNamed(context, AppRoutes.qrScanner).then((_) {
+                          _loadUserBearings();
+                          RewardService.fetchUserRewardProfile();
+                        }),
                       ),
                       const SizedBox(height: 12),
 

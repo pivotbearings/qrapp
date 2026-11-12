@@ -73,6 +73,8 @@ class BearingTrackResult {
   final DateTime? warrantyExpiryTimestamp;
   final String? message;
   final String? notes;
+  final String? inNotes;
+  final String? outNotes;
   final List<BearingCycleRecord> lifecycleHistory;
   final String? rawPayload;
   final RewardClaimResult? rewardClaim;
@@ -96,6 +98,8 @@ class BearingTrackResult {
     this.warrantyExpiryTimestamp,
     this.message,
     this.notes,
+    this.inNotes,
+    this.outNotes,
     this.lifecycleHistory = const [],
     this.rawPayload,
     this.rewardClaim,
@@ -121,13 +125,15 @@ class BearingTrackResult {
       warrantyExpiryTimestamp: warrantyExpiryTimestamp,
       message: message,
       notes: notes,
+      inNotes: inNotes,
+      outNotes: outNotes,
       lifecycleHistory: lifecycleHistory,
       rawPayload: rawPayload,
       rewardClaim: claim ?? rewardClaim,
     );
   }
 
-  BearingTrackResult copyWithNotes(String newNotes) {
+  BearingTrackResult copyWithNotes(String newNotes, {bool isOut = false, String? inNotes, String? outNotes}) {
     return BearingTrackResult(
       isValid: isValid,
       action: action,
@@ -147,6 +153,8 @@ class BearingTrackResult {
       warrantyExpiryTimestamp: warrantyExpiryTimestamp,
       message: message,
       notes: newNotes,
+      inNotes: inNotes ?? (!isOut ? newNotes : this.inNotes),
+      outNotes: outNotes ?? (isOut ? newNotes : this.outNotes),
       lifecycleHistory: lifecycleHistory,
       rawPayload: rawPayload,
       rewardClaim: rewardClaim,
@@ -218,6 +226,8 @@ class BearingTrackResult {
           : null,
       message: json['message']?.toString(),
       notes: json['notes']?.toString(),
+      inNotes: json['in_notes']?.toString(),
+      outNotes: json['out_notes']?.toString(),
       lifecycleHistory: historyList,
       rawPayload: rawPayload,
     );
@@ -243,6 +253,8 @@ class BearingTrackResult {
     int? warrantyDurationMonths,
     DateTime? warrantyExpiryTimestamp,
     String? message,
+    String? inNotes,
+    String? outNotes,
     String? rawPayload,
   }) {
     return BearingTrackResult(
@@ -255,7 +267,10 @@ class BearingTrackResult {
       warrantyExpiryTimestamp: warrantyExpiryTimestamp,
       inTimestamp: inTimestamp,
       outTimestamp: outTimestamp,
-      message: message ?? 'This bearing has already been marked out and cannot be tracked again.',
+      inNotes: inNotes,
+      outNotes: outNotes,
+      notes: outNotes ?? inNotes,
+      message: message ?? 'This bearing has already completed Cycle 1 and cannot be tracked again.',
       rawPayload: rawPayload,
     );
   }

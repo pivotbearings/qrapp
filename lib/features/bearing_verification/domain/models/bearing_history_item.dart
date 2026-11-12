@@ -10,6 +10,8 @@ class BearingHistoryItem {
   final DateTime? outTimestamp;
   final int? durationSeconds;
   final String? notes;
+  final String? inNotes;
+  final String? outNotes;
   final bool isOut;
 
   BearingHistoryItem({
@@ -21,6 +23,8 @@ class BearingHistoryItem {
     this.outTimestamp,
     this.durationSeconds,
     this.notes,
+    this.inNotes,
+    this.outNotes,
     required this.isOut,
   });
 
@@ -61,9 +65,44 @@ class BearingHistoryItem {
     }
   }
 
+  static String? _clean(String? value) {
+    if (value == null) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Resolves distinct Mark In and Mark Out notes, including legacy `' | Out: '` strings.
+  (String?, String?) resolveInOutNotes() {
+    var resolvedIn = _clean(inNotes);
+    var resolvedOut = _clean(outNotes);
+    final raw = _clean(notes);
+
+    if (raw != null && raw.contains(' | Out: ')) {
+      final parts = raw.split(' | Out: ');
+      resolvedIn ??= _clean(parts.first);
+      resolvedOut ??= _clean(parts.sublist(1).join(' | Out: '));
+    } else if (!isOut && resolvedIn == null && raw != null) {
+      resolvedIn = raw;
+    }
+
+    return (resolvedIn, resolvedOut);
+  }
+
   /// Clean, readable WhatsApp sharing message (strictly no warranty details and no plant location)
   String generateWhatsAppMessage() {
-    final noteLine = (notes != null && notes!.trim().isNotEmpty) ? '*Notes:* ${notes!.trim()}\n' : '';
+    final (resolvedIn, resolvedOut) = resolveInOutNotes();
+    final rawNotes = _clean(notes);
+    final notesBuffer = StringBuffer();
+    if (resolvedIn != null) {
+      notesBuffer.write('*Mark In Notes:* $resolvedIn\n');
+    }
+    if (resolvedOut != null) {
+      notesBuffer.write('*Mark Out Notes:* $resolvedOut\n');
+    }
+    if (resolvedIn == null && resolvedOut == null && rawNotes != null) {
+      notesBuffer.write('*Notes:* $rawNotes\n');
+    }
+    final noteLine = notesBuffer.toString();
 
     if (isOut) {
       return '''*PIVOT BEARINGS INDIA - BEARING OUT RECORD*

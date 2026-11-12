@@ -48,6 +48,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   AdBannerConfig _adConfig = AdBannerConfig.defaultConfig();
   StreamSubscription<AdBannerConfig>? _adBannerSub;
   RealtimeChannel? _supabaseAdChannel;
+  RealtimeChannel? _supabaseWalletChannel;
 
   void _safeNavigate(String routeName, {Object? arguments}) {
     if (_isNavigating) return;
@@ -67,6 +68,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   void initState() {
     super.initState();
     AuthController.instance.addListener(_onAuthChanged);
+    RewardService.liveProfileNotifier.addListener(_onLiveRewardChanged);
+    if (RewardService.liveProfileNotifier.value != null) {
+      _rewardProfile = RewardService.liveProfileNotifier.value!;
+    }
     _adConfig = AdBannerService.currentConfig;
     
     // 1. Listen for immediate in-app real-time broadcasts
@@ -78,8 +83,43 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
     // 2. Listen for remote Supabase Realtime changes across any browser / device
     _initSupabaseRealtimeAdBanner();
+    _initSupabaseRealtimeRewardWallet();
 
     _loadDashboardData();
+  }
+
+  void _onLiveRewardChanged() {
+    final latest = RewardService.liveProfileNotifier.value;
+    if (latest != null && mounted) {
+      setState(() => _rewardProfile = latest);
+    }
+  }
+
+  void _initSupabaseRealtimeRewardWallet() {
+    if (!SupabaseService.isInitialized) return;
+    final uid = AuthController.instance.userId ?? SupabaseService.currentUserId;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final client = SupabaseService.client;
+      _supabaseWalletChannel = client
+          .channel('public:user_reward_wallets:$uid')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'user_reward_wallets',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: uid,
+            ),
+            callback: (_) {
+              RewardService.fetchUserRewardProfile();
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('RewardWallet realtime subscription notice: $e');
+    }
   }
 
   void _initSupabaseRealtimeAdBanner() {
@@ -123,6 +163,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         SupabaseService.client.removeChannel(_supabaseAdChannel!);
       } catch (_) {}
     }
+    if (_supabaseWalletChannel != null) {
+      try {
+        SupabaseService.client.removeChannel(_supabaseWalletChannel!);
+      } catch (_) {}
+    }
+    RewardService.liveProfileNotifier.removeListener(_onLiveRewardChanged);
     AuthController.instance.removeListener(_onAuthChanged);
     super.dispose();
   }
@@ -141,11 +187,25 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     }
 
     try {
-      try {
-        await AuthController.instance.refreshPermissions();
-      } catch (_) {}
+      // Launch reward profile & ad config fetches immediately in parallel
+      final rewardFuture = RewardService.fetchUserRewardProfile().then((rp) {
+        if (mounted) {
+          setState(() => _rewardProfile = rp);
+        }
+      }).catchError((_) {});
 
-      final profile = await SupabaseService.fetchUserProfile();
+      final adFuture = AdBannerService.fetchBannerConfig(forceRefresh: true).then((ad) {
+        if (mounted) {
+          setState(() => _adConfig = ad);
+        }
+      }).catchError((_) {});
+
+      final permFuture = AuthController.instance.refreshPermissions().catchError((_) {});
+      final profileFuture = SupabaseService.fetchUserProfile();
+      final inHistoryFuture = BearingTrackService.fetchTrackInHistory();
+      final outHistoryFuture = BearingTrackService.fetchTrackOutHistory();
+
+      final profile = await profileFuture;
       final auth = AuthController.instance;
       final bearings = await _bearingRepo.getAllBearings(
         customerId: profile['id']?.toString() ?? auth.userId,
@@ -153,8 +213,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         facilityCode: profile['facility_code']?.toString(),
       );
 
-      final inHistory = await BearingTrackService.fetchTrackInHistory();
-      final outHistory = await BearingTrackService.fetchTrackOutHistory();
+      final inHistory = await inHistoryFuture;
+      final outHistory = await outHistoryFuture;
       final inFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyIn).length;
       final outFromBearings = bearings.where((b) => b.state == BearingLifecycleState.currentlyOut).length;
 
@@ -169,19 +229,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         });
       }
 
-      try {
-        final rp = await RewardService.fetchUserRewardProfile();
-        if (mounted) {
-          setState(() => _rewardProfile = rp);
-        }
-      } catch (_) {}
-
-      try {
-        final ad = await AdBannerService.fetchBannerConfig(forceRefresh: true);
-        if (mounted) {
-          setState(() => _adConfig = ad);
-        }
-      } catch (_) {}
+      await Future.wait([rewardFuture, adFuture, permFuture]);
 
       if (showFeedback && mounted) {
         AppSnackBar.showSuccess(context, 'Dashboard data refreshed');

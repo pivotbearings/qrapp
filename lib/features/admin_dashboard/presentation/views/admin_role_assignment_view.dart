@@ -7,16 +7,14 @@ import '../../../../core/constants/app_typography.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/industrial_card.dart';
-import '../../../../core/widgets/industrial_status_badge.dart';
 import '../../../../core/widgets/industrial_text_field.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../widgets/admin_view_header.dart';
 
-/// Pivot Bearings India — Admin Role Assignment & Onboarding Clearance View
+/// Pivot Bearings India — Admin Role Assignment View
 ///
 /// Strictly restricted to System Administrators.
-/// Provides live monitoring of newly registered accounts, permission allocations,
-/// role promotion (USER vs ADMIN), and instantaneous clearance authorization.
+/// Provides live monitoring of registered accounts and role assignment (USER vs ADMIN).
 class AdminRoleAssignmentView extends StatefulWidget {
   const AdminRoleAssignmentView({super.key});
 
@@ -30,7 +28,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
   bool _isLoading = true;
   String? _errorMessage;
   Timer? _refreshTimer;
-  String _activeFilter = 'ALL'; // ALL, PENDING, APPROVED, ADMINS
+  String _activeFilter = 'ALL'; // ALL, USERS, ADMINS
   int _currentPage = 0;
   static const int _pageSize = 10;
 
@@ -82,9 +80,8 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
     }
   }
 
-  Future<void> _updateUserClearance({
+  Future<void> _updateUserRole({
     required Map<String, dynamic> user,
-    required bool approve,
     required String role,
   }) async {
     final userId = user['id']?.toString() ?? '';
@@ -95,7 +92,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
     setState(() {
       for (final u in _users) {
         if (u['id'] == userId || u['email'] == userEmail) {
-          u['is_approved'] = approve;
+          u['is_approved'] = true;
           u['role'] = role;
         }
       }
@@ -105,7 +102,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
       final success = await SupabaseService.updateUserRoleAndClearance(
         userId: userId,
         role: role,
-        isApproved: approve,
+        isApproved: true,
         email: userEmail,
       );
 
@@ -114,9 +111,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
       if (success) {
         AppSnackBar.showSuccess(
           context,
-          approve
-              ? 'CLEARANCE GRANTED: $userName ($userEmail) authorized as [$role].'
-              : 'CLEARANCE REVOKED: $userName ($userEmail) placed in Pending Review.',
+          'ROLE UPDATED: $userName ($userEmail) assigned as [$role].',
         );
       } else {
         AppSnackBar.showError(
@@ -137,7 +132,6 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
     String selectedRole = (user['role']?.toString().toUpperCase()) == 'ADMIN' ? 'ADMIN' : 'USER';
     final userEmail = user['email']?.toString() ?? '';
     final userName = user['full_name']?.toString() ?? 'Operator';
-    final isApproved = user['is_approved'] == true;
 
     showDialog(
       context: context,
@@ -153,7 +147,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
               children: [
                 const Icon(Icons.admin_panel_settings, color: AppColors.primary, size: 24),
                 const SizedBox(width: 8),
-                Text('ASSIGN ROLE & CLEARANCE', style: AppTypography.headlineSm.copyWith(color: AppColors.primary)),
+                Text('ASSIGN USER ROLE', style: AppTypography.headlineSm.copyWith(color: AppColors.primary)),
               ],
             ),
             content: ConstrainedBox(
@@ -182,7 +176,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                   const SizedBox(height: 8),
                   _buildRoleSelectorCard(
                     title: 'System Administrator',
-                    subtitle: 'Full factory clearance: QR batch engine, Item Master, warranty horizons, audit logs.',
+                    subtitle: 'Full factory control: QR batch engine, Item Master, warranty horizons, audit logs.',
                     roleCode: 'ADMIN',
                     isSelected: selectedRole == 'ADMIN',
                     onTap: () => setDialogState(() => selectedRole = 'ADMIN'),
@@ -200,9 +194,8 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                 width: 140,
                 onPressed: () {
                   Navigator.pop(ctx);
-                  _updateUserClearance(
+                  _updateUserRole(
                     user: user,
-                    approve: isApproved,
                     role: selectedRole,
                   );
                 },
@@ -280,15 +273,12 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
 
     // Filter calculations
     final totalCount = _users.length;
-    final pendingCount = _users.where((u) => u['is_approved'] != true).length;
-    final approvedCount = _users.where((u) => u['is_approved'] == true && u['role'] != 'ADMIN').length;
-    final adminCount = _users.where((u) => u['role'] == 'ADMIN').length;
+    final userCount = _users.where((u) => (u['role'] ?? 'USER').toString().toUpperCase() != 'ADMIN').length;
+    final adminCount = _users.where((u) => (u['role'] ?? 'USER').toString().toUpperCase() == 'ADMIN').length;
 
     final filteredUsers = _users.where((u) {
-      final isApproved = u['is_approved'] == true;
       final role = (u['role'] ?? 'USER').toString().toUpperCase();
-      if (_activeFilter == 'PENDING') return !isApproved;
-      if (_activeFilter == 'APPROVED') return isApproved && role != 'ADMIN';
+      if (_activeFilter == 'USERS') return role != 'ADMIN';
       if (_activeFilter == 'ADMINS') return role == 'ADMIN';
       return true;
     }).toList();
@@ -321,8 +311,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
           // Real-time Metrics Row
           _buildMetricsOverview(
             total: totalCount,
-            pending: pendingCount,
-            approved: approvedCount,
+            users: userCount,
             admins: adminCount,
           ),
           const SizedBox(height: AppDimensions.spaceLg),
@@ -357,8 +346,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                   runSpacing: 8,
                   children: [
                     _buildFilterChip('ALL', 'All Registered ($totalCount)'),
-                    _buildFilterChip('PENDING', 'Pending Clearance ($pendingCount)', isWarning: pendingCount > 0),
-                    _buildFilterChip('APPROVED', 'Standard Operators ($approvedCount)'),
+                    _buildFilterChip('USERS', 'Standard Users ($userCount)'),
                     _buildFilterChip('ADMINS', 'Administrators ($adminCount)'),
                   ],
                 ),
@@ -403,20 +391,18 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                 border: Border.all(color: AppColors.primary, width: 1.5),
                 borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
               ),
-              child: Center(
+              child: const Center(
                 child: Column(
                   children: [
-                    const Icon(Icons.verified_user_outlined, size: 48, color: AppColors.primary),
-                    const SizedBox(height: 12),
+                    Icon(Icons.verified_user_outlined, size: 48, color: AppColors.primary),
+                    SizedBox(height: 12),
                     Text(
-                      _activeFilter == 'PENDING'
-                          ? 'NO OPERATORS CURRENTLY PENDING APPROVAL'
-                          : 'NO MATCHING REGISTERED ACCOUNTS',
+                      'NO MATCHING REGISTERED ACCOUNTS',
                       style: AppTypography.headlineSm,
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'All accounts have been processed or matched by your active search criteria.',
+                    SizedBox(height: 4),
+                    Text(
+                      'All accounts have been matched by your active search criteria.',
                       style: AppTypography.caption,
                     ),
                   ],
@@ -584,8 +570,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
 
   Widget _buildMetricsOverview({
     required int total,
-    required int pending,
-    required int approved,
+    required int users,
     required int admins,
   }) {
     return LayoutBuilder(
@@ -594,13 +579,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
 
         final items = [
           _buildStatCard('TOTAL REGISTERED', total.toString(), Icons.people_alt),
-          _buildStatCard(
-            'PENDING CLEARANCE',
-            pending.toString(),
-            Icons.hourglass_top,
-            isHighlighted: pending > 0,
-          ),
-          _buildStatCard('CERTIFIED OPERATORS', approved.toString(), Icons.verified),
+          _buildStatCard('STANDARD USERS', users.toString(), Icons.person),
           _buildStatCard('ADMINISTRATORS', admins.toString(), Icons.admin_panel_settings),
         ];
 
@@ -693,10 +672,9 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
         columnWidths: const {
           0: FlexColumnWidth(2.5), // Operator & Email
           1: FlexColumnWidth(1.8), // Facility / Company
-          2: FlexColumnWidth(1.1), // Registration Date
-          3: FlexColumnWidth(2.2), // Clearance Status
-          4: FlexColumnWidth(1.4), // Assigned Role
-          5: FlexColumnWidth(2.4), // Direct Actions
+          2: FlexColumnWidth(1.3), // Registration Date
+          3: FlexColumnWidth(1.5), // Assigned Role
+          4: FlexColumnWidth(1.8), // Direct Actions
         },
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         children: [
@@ -710,7 +688,6 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
               _HeaderCell('OPERATOR / IDENTITY'),
               _HeaderCell('FACILITY / ENTERPRISE'),
               _HeaderCell('REGISTERED'),
-              _HeaderCell('CLEARANCE STATUS'),
               _HeaderCell('ROLE ASSIGNED'),
               _HeaderCell('ACTIONS'),
             ],
@@ -727,7 +704,6 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
     final company = user['company_name']?.toString() ?? '—';
     final facility = user['facility_code']?.toString() ?? '';
     final role = (user['role']?.toString().toUpperCase()) == 'ADMIN' ? 'ADMIN' : 'USER';
-    final isApproved = user['is_approved'] == true;
     final createdAt = user['created_at']?.toString() ?? '';
     final formattedDate = _formatDate(createdAt);
 
@@ -744,12 +720,12 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
             children: [
               CircleAvatar(
                 radius: 18,
-                backgroundColor: isApproved ? AppColors.primary : AppColors.background,
+                backgroundColor: AppColors.primary,
                 child: Text(
                   name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'U',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isApproved ? AppColors.background : AppColors.primary,
+                    color: AppColors.background,
                   ),
                 ),
               ),
@@ -787,22 +763,6 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Text(formattedDate, style: AppTypography.caption),
-        ),
-
-        // Clearance Status Badge
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: IndustrialStatusBadge(
-                statusText: isApproved ? 'CLEARANCE ACTIVE' : 'PENDING REVIEW',
-                icon: isApproved ? Icons.verified : Icons.hourglass_top,
-              ),
-            ),
-          ),
         ),
 
         // Assigned Role Badge & Selector
@@ -857,32 +817,12 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
         // Direct Actions
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-          child: Row(
-            children: [
-              if (!isApproved) ...[
-                IndustrialButton(
-                  label: 'APPROVE & CLEAR',
-                  icon: Icons.check_circle_outline,
-                  width: 140,
-                  height: 36,
-                  onPressed: () => _updateUserClearance(user: user, approve: true, role: role),
-                ),
-              ] else ...[
-                IndustrialButton.secondary(
-                  label: 'REVOKE',
-                  icon: Icons.block,
-                  width: 100,
-                  height: 36,
-                  onPressed: () => _updateUserClearance(user: user, approve: false, role: role),
-                ),
-              ],
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.manage_accounts, color: AppColors.primary, size: 20),
-                tooltip: 'Modify Role',
-                onPressed: () => _showRoleChangeDialog(user),
-              ),
-            ],
+          child: IndustrialButton.secondary(
+            label: 'MODIFY ROLE',
+            icon: Icons.manage_accounts,
+            width: 140,
+            height: 36,
+            onPressed: () => _showRoleChangeDialog(user),
           ),
         ),
       ],
@@ -896,7 +836,6 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
         final name = u['full_name']?.toString() ?? 'Operator';
         final company = u['company_name']?.toString() ?? '—';
         final role = (u['role']?.toString().toUpperCase()) == 'ADMIN' ? 'ADMIN' : 'USER';
-        final isApproved = u['is_approved'] == true;
         final formattedDate = _formatDate(u['created_at']?.toString() ?? '');
 
         return IndustrialCard(
@@ -904,23 +843,12 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name, style: AppTypography.headlineSm),
-                        const SizedBox(height: 2),
-                        Text(email, style: AppTypography.caption),
-                      ],
-                    ),
-                  ),
-                  IndustrialStatusBadge(
-                    statusText: isApproved ? 'CLEARANCE ACTIVE' : 'PENDING REVIEW',
-                    icon: isApproved ? Icons.verified : Icons.hourglass_top,
-                  ),
+                  Text(name, style: AppTypography.headlineSm),
+                  const SizedBox(height: 2),
+                  Text(email, style: AppTypography.caption),
                 ],
               ),
               const Divider(height: 20, color: AppColors.primary),
@@ -949,7 +877,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                     child: Row(
                       children: [
                         Text(
-                          role == 'ADMIN' ? 'ADMINISTRATOR' : 'STANDARD OPERATOR',
+                          role == 'ADMIN' ? 'ADMINISTRATOR' : 'STANDARD USER',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             color: AppColors.primary,
@@ -962,29 +890,13 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: isApproved
-                        ? IndustrialButton.secondary(
-                            label: 'REVOKE CLEARANCE',
-                            icon: Icons.block,
-                            onPressed: () => _updateUserClearance(user: u, approve: false, role: role),
-                          )
-                        : IndustrialButton(
-                            label: 'APPROVE & CLEAR ACCESS',
-                            icon: Icons.check_circle_outline,
-                            onPressed: () => _updateUserClearance(user: u, approve: true, role: role),
-                          ),
-                  ),
-                  const SizedBox(width: 8),
-                  IndustrialButton.secondary(
-                    label: 'ROLE',
-                    icon: Icons.edit,
-                    width: 90,
-                    onPressed: () => _showRoleChangeDialog(u),
-                  ),
-                ],
+              SizedBox(
+                width: double.infinity,
+                child: IndustrialButton.secondary(
+                  label: 'MODIFY ROLE',
+                  icon: Icons.edit,
+                  onPressed: () => _showRoleChangeDialog(u),
+                ),
               ),
             ],
           ),
@@ -1009,7 +921,7 @@ class _AdminRoleAssignmentViewState extends State<AdminRoleAssignmentView> {
                 const Text('ACCESS RESTRICTED', style: AppTypography.headlineLg),
                 const SizedBox(height: 8),
                 const Text(
-                  'The Role Assignment & Operator Clearance Workstation requires elevated System Administrator privileges.',
+                  'The Role Assignment Workstation requires elevated System Administrator privileges.',
                   textAlign: TextAlign.center,
                   style: AppTypography.bodySm,
                 ),

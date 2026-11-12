@@ -54,16 +54,23 @@ class BearingRepositoryImpl implements BearingRepository {
   Future<QrVerificationResult> verifyScannedPayload(String payload) async {
     final res = await _verifyScannedPayloadInternal(payload);
     if (res.status == QrVerificationStatus.validNotActivated ||
-        res.status == QrVerificationStatus.validWarrantyActive) {
+        res.status == QrVerificationStatus.validWarrantyActive ||
+        res.status == QrVerificationStatus.warrantyExpired) {
       try {
-        final isClaimed = await RewardService.isBearingRewardClaimed(payload);
-        if (isClaimed) {
+        final auth = AuthController.instance;
+        if (!auth.isRewardEligible) {
           return res.copyWithReward(const RewardClaimResult(
             rewardAwarded: false,
-            alreadyClaimed: true,
-            message: 'First-scan reward has already been claimed for this bearing.',
+            isUserBlocked: true,
+            message: 'Bearing verified authentic. Promotional reward points are currently inactive for this account profile.',
           ));
         }
+
+        final claim = await RewardService.claimBearingScanReward(
+          rawPayloadOrId: res.bearingId != null && res.bearingId!.isNotEmpty ? res.bearingId! : payload,
+          sourceModule: 'WARRANTY_SCAN',
+        );
+        return res.copyWithReward(claim);
       } catch (e) {
         debugPrint('Reward check error: $e');
       }
@@ -79,26 +86,19 @@ class BearingRepositoryImpl implements BearingRepository {
       return QrVerificationResult.invalid(message: 'Scanned payload is empty.');
     }
 
-    String bearingId = cleanPayload;
-    if (bearingId.contains('/pbi/')) {
-      final parts = bearingId.split('/pbi/');
-      if (parts.length > 1) {
-        bearingId = parts[1].split('?').first.split('&').first;
-      }
-    } else if (bearingId.contains('://')) {
-      final uri = Uri.tryParse(bearingId);
-      if (uri != null && uri.pathSegments.isNotEmpty) {
-        bearingId = uri.pathSegments.last.split('?').first;
-      }
-    }
-    bearingId = bearingId.toUpperCase().trim();
+    final bearingId = _extractBearingId(cleanPayload);
+    final upperBearingId = bearingId.toUpperCase();
 
     // Check permanent OUT state from local storage across modules
     final prefs = await SharedPreferences.getInstance();
     final isLocallyPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$bearingId') == true ||
+        prefs.getBool('pbi_bearing_permanently_out_$upperBearingId') == true ||
         prefs.getString('pbi_track_state_$bearingId') == 'FINAL_OUT' ||
+        prefs.getString('pbi_track_state_$upperBearingId') == 'FINAL_OUT' ||
         prefs.getString('pbi_track_state_$bearingId') == 'DECOMMISSIONED' ||
-        prefs.getString('pbi_bearing_state_$bearingId') == 'CURRENTLY_OUT';
+        prefs.getString('pbi_track_state_$upperBearingId') == 'DECOMMISSIONED' ||
+        prefs.getString('pbi_bearing_state_$bearingId') == 'CURRENTLY_OUT' ||
+        prefs.getString('pbi_bearing_state_$upperBearingId') == 'CURRENTLY_OUT';
 
     if (isLocallyPermanentlyOut) {
       return QrVerificationResult(
@@ -349,22 +349,11 @@ class BearingRepositoryImpl implements BearingRepository {
   }
 
   QrVerificationResult _mockVerifyPayload(String rawPayload) {
-    String bearingId = rawPayload;
-    if (bearingId.contains('/pbi/')) {
-      final parts = bearingId.split('/pbi/');
-      if (parts.length > 1) {
-        bearingId = parts[1].split('?').first.split('&').first;
-      }
-    } else if (bearingId.contains('://')) {
-      final uri = Uri.tryParse(bearingId);
-      if (uri != null && uri.pathSegments.isNotEmpty) {
-        bearingId = uri.pathSegments.last.split('?').first;
-      }
-    }
-    bearingId = bearingId.toUpperCase().trim();
+    final bearingId = _extractBearingId(rawPayload);
 
     // Check cryptographic key or serial format validation
-    if (!BearingEncryptionKeyService.isValidKeyOrId(bearingId)) {
+    if (!BearingEncryptionKeyService.isValidKeyOrId(bearingId) &&
+        !BearingEncryptionKeyService.isValidKeyOrId(bearingId.toUpperCase())) {
       return QrVerificationResult.invalid(
         id: bearingId,
         message: 'Malformed or unverified identifier. Format must be an authentic cryptographic key or registered serial.',
@@ -473,12 +462,20 @@ class BearingRepositoryImpl implements BearingRepository {
       if (parts.length > 1) {
         id = parts[1].split('?').first.split('&').first;
       }
+    } else if (id.contains('/verify/')) {
+      final parts = id.split('/verify/');
+      if (parts.length > 1) {
+        id = parts[1].split('?').first.split('&').first;
+      }
     } else if (id.contains('://')) {
       final uri = Uri.tryParse(id);
       if (uri != null && uri.pathSegments.isNotEmpty) {
-        id = uri.pathSegments.last.split('?').first;
+        id = uri.pathSegments.last.split('?').first.split('&').first;
       }
     }
+    try {
+      id = Uri.decodeComponent(id);
+    } catch (_) {}
     return id.trim();
   }
 

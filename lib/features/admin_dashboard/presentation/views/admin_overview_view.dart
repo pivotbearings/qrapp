@@ -273,7 +273,7 @@ class _AdminOverviewViewState extends State<AdminOverviewView> {
                   ),
                   _ActionShortcutCard(
                     title: 'Role Assignment',
-                    subtitle: 'User clearance & permissions',
+                    subtitle: 'User roles & permissions',
                     icon: Icons.admin_panel_settings,
                     onTap: widget.onNavigateToRoles ?? () {},
                   ),

@@ -332,27 +332,6 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
     _updateAuthorisedNumbers(user: user, numbers: [formatted]);
   }
 
-  Future<void> _approveUser(Map<String, dynamic> user) async {
-    final userId = user['id']?.toString() ?? '';
-    final email = user['email']?.toString() ?? '';
-
-    final ok = await SupabaseService.updateUserRoleAndClearance(
-      userId: userId,
-      role: 'USER',
-      isApproved: true,
-      email: email,
-    );
-
-    if (mounted) {
-      if (ok) {
-        AppSnackBar.showSuccess(context, 'User $email approved successfully!');
-        _loadCustomers();
-      } else {
-        AppSnackBar.showError(context, 'Failed to approve user.');
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -636,7 +615,6 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
         ? user['facility_code'].toString()
         : 'FAC-REG';
     final role = user['role']?.toString().toUpperCase() ?? 'USER';
-    final isApproved = user['is_approved'] == true;
     final isAdmin = role == 'ADMIN';
 
     // Module Permissions & Reward Eligibility (Strictly mutually exclusive)
@@ -729,22 +707,6 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                             ),
                           ),
                         ),
-                        // Approval Pill
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: isApproved ? const Color(0xFF22C55E) : const Color(0xFFEAB308),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            isApproved ? 'APPROVED' : 'PENDING',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
                         // Rewards Blocked Pill
                         if (!isRewardEligible)
                           Container(
@@ -810,30 +772,6 @@ class _AdminCustomersViewState extends State<AdminCustomersView> {
                     ),
                   ),
                 ),
-
-                // Approve Button if unapproved
-                if (!isApproved) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary, width: 1.2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                      ),
-                      onPressed: () => _approveUser(user),
-                      icon: const Icon(Icons.check_circle_outline, size: 16),
-                      label: const Text(
-                        'APPROVE USER CLEARANCE',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

@@ -43,16 +43,15 @@ class BearingAuthenticationService {
     }
     if (res.isAuthentic && !res.isAlreadyOut) {
       try {
-        final isClaimed = await RewardService.isBearingRewardClaimed(rawPayload);
-        if (isClaimed) {
-          return res.copyWithReward(const RewardClaimResult(
-            rewardAwarded: false,
-            alreadyClaimed: true,
-            message: 'First-scan reward has already been claimed for this bearing.',
-          ));
-        }
+        final claim = await RewardService.claimBearingScanReward(
+          rawPayloadOrId: (res.bearingId != null && res.bearingId!.isNotEmpty)
+              ? res.bearingId!
+              : rawPayload,
+          sourceModule: 'AUTHENTICATE_BEARING',
+        );
+        return res.copyWithReward(claim);
       } catch (e) {
-        debugPrint('Authentication reward check error: $e');
+        debugPrint('Authentication reward claim error: $e');
       }
     }
     return res;
@@ -68,12 +67,15 @@ class BearingAuthenticationService {
     }
 
     final bearingId = _extractBearingId(cleanPayload);
+    final upperBearingId = bearingId.toUpperCase();
     final prefs = await SharedPreferences.getInstance();
     final deviceId = await _getOrCreateDeviceId();
 
     // Fast-path decommissioned check: if bearing marked out, refuse authentication
     final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$bearingId') == true ||
-        prefs.getString('pbi_track_state_$bearingId') == 'FINAL_OUT';
+        prefs.getBool('pbi_bearing_permanently_out_$upperBearingId') == true ||
+        prefs.getString('pbi_track_state_$bearingId') == 'FINAL_OUT' ||
+        prefs.getString('pbi_track_state_$upperBearingId') == 'FINAL_OUT';
     if (isPermanentlyOut) {
       return BearingAuthenticationResult.alreadyOut(
         bearingId: bearingId,
@@ -95,22 +97,21 @@ class BearingAuthenticationService {
 
         if (res != null && res is Map) {
           final data = Map<String, dynamic>.from(res);
-          // Mark this device as having authenticated this bearing
-          await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
-          return BearingAuthenticationResult.fromJson(data, rawPayload: cleanPayload);
+          if (data['is_authentic'] == true || data['status'] == 'ALREADY_OUT') {
+            // Mark this device as having authenticated this bearing
+            await prefs.setBool('$_deviceScannedPrefix$bearingId', true);
+            return BearingAuthenticationResult.fromJson(data, rawPayload: cleanPayload);
+          }
         }
       } catch (e) {
         debugPrint('Supabase RPC authenticate_bearing_qr error, attempting fallback: $e');
         // Fall back to direct query or offline mode
       }
 
-      // 2. Direct Supabase Query Fallback (if RPC migration is pending)
+      // 2. Direct Supabase Query Fallback (exact, payload_value, or case-insensitive)
       try {
         Map<String, dynamic>? row;
-        try {
-          row = await SupabaseService.client
-              .from('qr_codes')
-              .select('''
+        const selectFields = '''
                 id,
                 bearing_id,
                 model_number,
@@ -123,8 +124,13 @@ class BearingAuthenticationService {
                 first_scanned_at,
                 qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
                 warranty_plans:assigned_warranty_plan_id (title, duration_months)
-              ''')
+              ''';
+        try {
+          row = await SupabaseService.client
+              .from('qr_codes')
+              .select(selectFields)
               .eq('bearing_id', bearingId)
+              .limit(1)
               .maybeSingle();
         } catch (_) {}
 
@@ -132,21 +138,20 @@ class BearingAuthenticationService {
           try {
             row = await SupabaseService.client
                 .from('qr_codes')
-                .select('''
-                  id,
-                  bearing_id,
-                  model_number,
-                  current_lifecycle_state,
-                  first_in_timestamp,
-                  warranty_expiry_timestamp,
-                  is_flagged,
-                  flag_reason,
-                  scan_count,
-                  first_scanned_at,
-                  qr_batches (batch_code, plant_location, default_warranty_plan_id, warranty_plans:default_warranty_plan_id(title, duration_months)),
-                  warranty_plans:assigned_warranty_plan_id (title, duration_months)
-                ''')
+                .select(selectFields)
                 .eq('payload_value', cleanPayload)
+                .limit(1)
+                .maybeSingle();
+          } catch (_) {}
+        }
+
+        if (row == null) {
+          try {
+            row = await SupabaseService.client
+                .from('qr_codes')
+                .select(selectFields)
+                .ilike('bearing_id', bearingId)
+                .limit(1)
                 .maybeSingle();
           } catch (_) {}
         }
@@ -283,7 +288,7 @@ class BearingAuthenticationService {
     return await _localVerify(cleanPayload);
   }
 
-  /// Extracts bearing identifier from URL or raw payload
+  /// Extracts bearing identifier from URL or raw payload while preserving case
   static String _extractBearingId(String payload) {
     var id = payload.trim();
     if (id.contains('/pbi/')) {
@@ -291,25 +296,31 @@ class BearingAuthenticationService {
       if (parts.length > 1) {
         id = parts[1].split('?').first.split('&').first;
       }
+    } else if (id.contains('/verify/')) {
+      final parts = id.split('/verify/');
+      if (parts.length > 1) {
+        id = parts[1].split('?').first.split('&').first;
+      }
     } else if (id.contains('://')) {
       final uri = Uri.tryParse(id);
       if (uri != null && uri.pathSegments.isNotEmpty) {
-        id = uri.pathSegments.last.split('?').first;
+        id = uri.pathSegments.last.split('?').first.split('&').first;
       }
     }
-    // If it's a 12-char randomized token, preserve exact case
-    if (RegExp(r'^[A-Za-z0-9@$#\[\]\-\*]{12}$').hasMatch(id)) {
-      return id.trim();
-    }
-    return id.toUpperCase().trim();
+    try {
+      id = Uri.decodeComponent(id);
+    } catch (_) {}
+    return id.trim();
   }
 
   /// Local validation with persistent unique device scan tracking (SharedPreferences)
   static Future<BearingAuthenticationResult> _localVerify(String cleanPayload) async {
     final bearingId = _extractBearingId(cleanPayload);
+    final upperId = bearingId.toUpperCase();
 
     // Validate identifier format
     final isKnownFormat = BearingEncryptionKeyService.isValidKeyOrId(bearingId) ||
+        BearingEncryptionKeyService.isValidKeyOrId(upperId) ||
         RegExp(r'^(PB-[0-9]{4}-[A-Z0-9]{2}|PBI-SEC-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}|(PBI|PB)(-[A-Z0-9]{3,8}){2,5})$', caseSensitive: false).hasMatch(bearingId);
 
     // List of registered seed bearings
@@ -337,8 +348,9 @@ class BearingAuthenticationService {
       },
     };
 
-    final isKnownSeed = knownRegisteredIds.containsKey(bearingId);
-    final isGenuineKey = BearingEncryptionKeyService.verifyTamperProofChecksum(bearingId);
+    final isKnownSeed = knownRegisteredIds.containsKey(bearingId) || knownRegisteredIds.containsKey(upperId);
+    final isGenuineKey = BearingEncryptionKeyService.verifyTamperProofChecksum(bearingId) ||
+        BearingEncryptionKeyService.verifyTamperProofChecksum(upperId);
 
     // If neither a valid seed bearing nor a verified cryptographic key, mark INVALID!
     if (!isKnownFormat || (!isKnownSeed && !isGenuineKey)) {
@@ -354,7 +366,9 @@ class BearingAuthenticationService {
 
     // Terminal guard: if bearing marked out, refuse authentication
     final isPermanentlyOut = prefs.getBool('pbi_bearing_permanently_out_$bearingId') == true ||
-        prefs.getString('pbi_track_state_$bearingId') == 'FINAL_OUT';
+        prefs.getBool('pbi_bearing_permanently_out_$upperId') == true ||
+        prefs.getString('pbi_track_state_$bearingId') == 'FINAL_OUT' ||
+        prefs.getString('pbi_track_state_$upperId') == 'FINAL_OUT';
     if (isPermanentlyOut) {
       return BearingAuthenticationResult.alreadyOut(
         bearingId: bearingId,
@@ -409,7 +423,7 @@ class BearingAuthenticationService {
     String warrantyTitle = cachedQr?['warranty_title']?.toString() ?? '$durationMonths Months Industrial Warranty';
 
     if (isKnownSeed) {
-      final info = knownRegisteredIds[bearingId]!;
+      final info = (knownRegisteredIds[bearingId] ?? knownRegisteredIds[upperId])!;
       model = info['model'] as String;
       batch = info['batch'] as String;
       plant = info['plant'] as String;
@@ -418,7 +432,7 @@ class BearingAuthenticationService {
     } else if (cachedQr != null) {
       // Use exact values from generated QR manifest
     } else if (isGenuineKey) {
-      final decoded = BearingEncryptionKeyService.decodeKey(bearingId);
+      final decoded = BearingEncryptionKeyService.decodeKey(upperId);
       final modelTok = decoded['model_token'] ?? '6204';
       model = 'PBI-$modelTok-ZZ';
       batch = 'BATCH-CRYPTO-V2';

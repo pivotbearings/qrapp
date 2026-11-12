@@ -653,14 +653,22 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
               ),
               onPressed: () async {
                 final newNotes = notesDialogCtrl.text.trim();
+                final isOutNote = _trackResult?.isBearingOut ?? false;
                 Navigator.pop(ctx);
                 _notesController.text = newNotes;
                 if (bearingId.isNotEmpty) {
-                  await BearingTrackService.saveBearingNotes(bearingId, newNotes);
+                  await BearingTrackService.saveBearingNotes(
+                    bearingId,
+                    newNotes,
+                    isOut: isOutNote,
+                  );
                 }
                 if (mounted && _trackResult != null) {
                   setState(() {
-                    _trackResult = _trackResult!.copyWithNotes(newNotes);
+                    _trackResult = _trackResult!.copyWithNotes(
+                      newNotes,
+                      isOut: isOutNote,
+                    );
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -1070,7 +1078,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 elevation: 0,
               ),
-              onPressed: () => _shareCustomWhatsAppMessage(item.toWhatsAppText()),
+              onPressed: () => _shareHistoryItemViaWhatsApp(item),
               icon: const WhatsAppIcon(size: 18, color: Colors.white),
               label: const Text(
                 'Send via WhatsApp',
@@ -1234,7 +1242,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 elevation: 0,
               ),
-              onPressed: () => _shareCustomWhatsAppMessage(item.toWhatsAppText()),
+              onPressed: () => _shareHistoryItemViaWhatsApp(item),
               icon: const WhatsAppIcon(size: 18, color: Colors.white),
               label: const Text(
                 'Send via WhatsApp',
@@ -3025,6 +3033,30 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     );
   }
 
+  Future<void> _shareHistoryItemViaWhatsApp(BearingHistoryItem item) async {
+    final (itemIn, itemOut) = item.resolveInOutNotes();
+    final fetched = await BearingTrackService.fetchBearingInOutNotes(
+      item.bearingId,
+      queryRemoteIfMissing: itemIn == null || (item.isOut && itemOut == null),
+    );
+    final resolvedIn = itemIn ?? fetched.inNotes;
+    final resolvedOut = itemOut ?? fetched.outNotes;
+    final enriched = BearingHistoryItem(
+      bearingId: item.bearingId,
+      modelNumber: item.modelNumber,
+      batchCode: item.batchCode,
+      productName: item.productName,
+      inTimestamp: item.inTimestamp,
+      outTimestamp: item.outTimestamp,
+      durationSeconds: item.durationSeconds,
+      notes: item.notes ?? fetched.legacyNotes,
+      inNotes: resolvedIn,
+      outNotes: resolvedOut,
+      isOut: item.isOut,
+    );
+    await _shareCustomWhatsAppMessage(enriched.toWhatsAppText());
+  }
+
   Future<void> _shareViaWhatsApp(BearingTrackResult result) async {
     final inTimeFormatted = result.inTimestamp != null
         ? _dateFormat.format(result.inTimestamp!.toLocal())
@@ -3037,19 +3069,46 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         .replaceAll('.', '');
 
     final prefs = await SharedPreferences.getInstance();
-    final inNotes = prefs.getString('pbi_bearing_in_notes_${result.bearingId}') ??
-        prefs.getString('pbi_bearing_notes_${result.bearingId}') ??
-        (result.action.toUpperCase() == 'BEARING_IN' ? result.notes : null);
-    final outNotes = prefs.getString('pbi_bearing_out_notes_${result.bearingId}') ??
-        prefs.getString('pbi_mark_out_notes_${result.bearingId}') ??
-        (result.action.toUpperCase() != 'BEARING_IN' ? result.notes : null);
+    final rawId = (result.bearingId ?? '').trim();
+    final fetched = rawId.isNotEmpty
+        ? await BearingTrackService.fetchBearingInOutNotes(
+            rawId,
+            queryRemoteIfMissing:
+                result.inNotes == null || (result.action.toUpperCase() != 'BEARING_IN' && result.outNotes == null),
+          )
+        : (inNotes: null, outNotes: null, legacyNotes: null);
+
+    String? cleanNonEmpty(String? v) => (v != null && v.trim().isNotEmpty) ? v.trim() : null;
+    final resNotesClean = cleanNonEmpty(result.notes);
+    String? splitResIn;
+    String? splitResOut;
+    if (resNotesClean != null && resNotesClean.contains(' | Out: ')) {
+      final parts = resNotesClean.split(' | Out: ');
+      splitResIn = cleanNonEmpty(parts.first);
+      splitResOut = cleanNonEmpty(parts.sublist(1).join(' | Out: '));
+    }
+
+    final inNotes = cleanNonEmpty(result.inNotes) ??
+        splitResIn ??
+        fetched.inNotes ??
+        (result.action.toUpperCase() == 'BEARING_IN' ? resNotesClean : null);
+    final outNotes = cleanNonEmpty(result.outNotes) ??
+        splitResOut ??
+        fetched.outNotes ??
+        (result.action.toUpperCase() != 'BEARING_IN' && resNotesClean != inNotes ? resNotesClean : null);
 
     final notesBuffer = StringBuffer();
-    if (inNotes != null && inNotes.trim().isNotEmpty) {
-      notesBuffer.write('\n• *Mark In Notes:* ${inNotes.trim()}');
+    if (inNotes != null) {
+      notesBuffer.write('\n• *Mark In Notes:* $inNotes');
     }
-    if (outNotes != null && outNotes.trim().isNotEmpty) {
-      notesBuffer.write('\n• *Mark Out Notes:* ${outNotes.trim()}');
+    if (outNotes != null) {
+      notesBuffer.write('\n• *Mark Out Notes:* $outNotes');
+    }
+    if (inNotes == null && outNotes == null) {
+      final fallbackNote = resNotesClean ?? fetched.legacyNotes;
+      if (fallbackNote != null) {
+        notesBuffer.write('\n• *Notes:* $fallbackNote');
+      }
     }
     final notesLine = notesBuffer.toString();
 

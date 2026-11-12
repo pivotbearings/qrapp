@@ -227,8 +227,7 @@ class _BearingAuthenticationScreenState
         if (auth.isRewardEligible &&
             result.isAuthentic &&
             !result.isAlreadyOut &&
-            result.rewardClaim?.alreadyClaimed != true &&
-            result.rewardClaim?.isUserBlocked != true) {
+            result.rewardClaim == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _claimRewardPointsDirectly(result.bearingId ?? payload);
           });
@@ -1159,7 +1158,7 @@ class _BearingAuthenticationScreenState
             ] else if (result.rewardClaim?.alreadyClaimed == true) ...[
               const SizedBox(height: AppDimensions.spaceSm),
               _buildRewardAlreadyClaimedNotice(),
-            ] else if (result.isAuthentic && !result.isAlreadyOut) ...[
+            ] else if (result.isAuthentic && !result.isAlreadyOut && result.rewardClaim?.isUserBlocked != true) ...[
               const SizedBox(height: AppDimensions.spaceSm),
               _buildClaimRewardPointsPrompt(result),
             ],
@@ -1380,7 +1379,7 @@ class _BearingAuthenticationScreenState
     );
   }
 
-  Future<void> _claimRewardPointsDirectly(String bearingId) async {
+  Future<void> _claimRewardPointsDirectly(String bearingId, {bool isManualTap = false}) async {
     final auth = AuthController.instance;
     if (!auth.isRewardEligible) return;
     try {
@@ -1388,12 +1387,17 @@ class _BearingAuthenticationScreenState
         rawPayloadOrId: bearingId,
         sourceModule: 'AUTHENTICATE_BEARING',
       );
-      if (claim.rewardAwarded && mounted) {
+      if (mounted) {
         setState(() {
           _authResult = _authResult?.copyWithReward(claim);
         });
+        if (isManualTap && !claim.rewardAwarded && !claim.alreadyClaimed && claim.message.isNotEmpty) {
+          AppSnackBar.showInfo(context, claim.message);
+        }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Claim reward error: $e');
+    }
   }
 
   Widget _buildClaimRewardPointsPrompt(BearingAuthenticationResult result) {
@@ -1445,7 +1449,7 @@ class _BearingAuthenticationScreenState
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               elevation: 0,
             ),
-            onPressed: () => _claimRewardPointsDirectly(bearingId),
+            onPressed: () => _claimRewardPointsDirectly(bearingId, isManualTap: true),
             child: const Text(
               'CLAIM',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),

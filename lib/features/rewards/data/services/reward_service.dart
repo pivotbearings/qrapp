@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -18,6 +19,76 @@ class RewardService {
   static const String _prefKeyOfflineClaimedBearings = 'pbi_reward_claimed_bearings';
   static const String _prefKeyOfflineRedemptions = 'pbi_offline_redemptions';
   static const String _prefKeyOfflineSettings = 'pbi_offline_reward_settings';
+
+  /// Live reactive reward profile state for instant (0ms) UI updates across screens
+  static final ValueNotifier<RewardProfile?> liveProfileNotifier = ValueNotifier<RewardProfile?>(null);
+  static RewardSettings? _cachedSettings;
+  static final Map<String, RewardClaimResult> _recentClaimsCache = {};
+
+  static RewardClaimResult? getRecentClaimForBearing(String rawPayloadOrId) {
+    final id = _extractBearingId(rawPayloadOrId);
+    if (id.isEmpty) return null;
+    final uid = AuthController.instance.userId ?? AuthController.instance.userEmail ?? 'anon';
+    return _recentClaimsCache['$uid:${id.toUpperCase()}'];
+  }
+
+  static void _cacheClaimResult(String rawPayloadOrId, RewardClaimResult claim) {
+    if (!claim.rewardAwarded && !claim.alreadyClaimed && !claim.isUserBlocked) return;
+    final id = _extractBearingId(claim.bearingId ?? rawPayloadOrId);
+    if (id.isEmpty) return;
+    final uid = AuthController.instance.userId ?? AuthController.instance.userEmail ?? 'anon';
+    _recentClaimsCache['$uid:${id.toUpperCase()}'] = claim;
+  }
+
+  static void _notifyLiveClaim(RewardClaimResult claim) {
+    if (!claim.rewardAwarded) return;
+    final prev = liveProfileNotifier.value ?? RewardProfile.defaultProfile();
+    final newBalance = claim.newBalance > 0
+        ? claim.newBalance
+        : (prev.currentBalancePoints + claim.pointsEarned);
+    final newEarned = prev.totalPointsEarned + claim.pointsEarned;
+    liveProfileNotifier.value = RewardProfile(
+      currentBalancePoints: newBalance,
+      currentBalanceInr: prev.calculateInrForPoints(newBalance),
+      pendingRedemptionPoints: prev.pendingRedemptionPoints,
+      pendingRedemptionInr: prev.pendingRedemptionInr,
+      totalPointsEarned: newEarned,
+      totalPointsRedeemed: prev.totalPointsRedeemed,
+      pointsBaseUnit: prev.pointsBaseUnit,
+      inrPerBaseUnit: prev.inrPerBaseUnit,
+      rateMultiplier: prev.rateMultiplier,
+      rateDisplayString: prev.rateDisplayString,
+      minRedemptionPoints: prev.minRedemptionPoints,
+      minRedemptionInr: prev.minRedemptionInr,
+      isEnabled: prev.isEnabled,
+      isRewardEligible: prev.isRewardEligible,
+      termsAndConditions: prev.termsAndConditions,
+    );
+  }
+
+  static void _notifyLiveRedemption(int points) {
+    final prev = liveProfileNotifier.value;
+    if (prev == null || points <= 0) return;
+    final newBalance = math.max(0, prev.currentBalancePoints - points);
+    final newPending = prev.pendingRedemptionPoints + points;
+    liveProfileNotifier.value = RewardProfile(
+      currentBalancePoints: newBalance,
+      currentBalanceInr: prev.calculateInrForPoints(newBalance),
+      pendingRedemptionPoints: newPending,
+      pendingRedemptionInr: prev.calculateInrForPoints(newPending),
+      totalPointsEarned: prev.totalPointsEarned,
+      totalPointsRedeemed: prev.totalPointsRedeemed,
+      pointsBaseUnit: prev.pointsBaseUnit,
+      inrPerBaseUnit: prev.inrPerBaseUnit,
+      rateMultiplier: prev.rateMultiplier,
+      rateDisplayString: prev.rateDisplayString,
+      minRedemptionPoints: prev.minRedemptionPoints,
+      minRedemptionInr: prev.minRedemptionInr,
+      isEnabled: prev.isEnabled,
+      isRewardEligible: prev.isRewardEligible,
+      termsAndConditions: prev.termsAndConditions,
+    );
+  }
 
   // ===========================================================================
   // 1. ATOMIC 1ST-SCAN REWARD CLAIM (With Mandatory Supplier Details)
@@ -52,7 +123,14 @@ class RewardService {
 
         if (res != null && res is Map) {
           final data = Map<String, dynamic>.from(res);
-          return RewardClaimResult.fromJson(data);
+          final errorCode = data['error_code']?.toString();
+          if (errorCode != 'UNAUTHORIZED') {
+            final claim = RewardClaimResult.fromJson(data);
+            _cacheClaimResult(clean, claim);
+            _notifyLiveClaim(claim);
+            return claim;
+          }
+          debugPrint('claim_bearing_scan_reward returned UNAUTHORIZED, falling back to local engine');
         }
       } catch (e) {
         debugPrint('Supabase claim_bearing_scan_reward error, falling back to local engine: $e');
@@ -60,12 +138,15 @@ class RewardService {
     }
 
     // Offline / Local Resilience Fallback
-    return await _localClaimBearingReward(
+    final localClaim = await _localClaimBearingReward(
       clean,
       sourceModule,
       supplierName: cleanSuppName,
       supplierContact: cleanSuppContact,
     );
+    _cacheClaimResult(clean, localClaim);
+    _notifyLiveClaim(localClaim);
+    return localClaim;
   }
 
   /// Checks if reward has already been claimed for a given bearing ID
@@ -75,32 +156,58 @@ class RewardService {
     final bearingId = _extractBearingId(clean);
     if (SupabaseService.isInitialized) {
       try {
-        final res = await SupabaseService.client
+        // 1. Exact match
+        var res = await SupabaseService.client
             .from('qr_codes')
             .select('is_reward_claimed')
-            .or('bearing_id.eq.$bearingId,payload_value.eq.$clean')
+            .eq('bearing_id', bearingId)
             .maybeSingle();
-        if (res != null && res['is_reward_claimed'] == true) {
-          return true;
+        if (res != null) {
+          return res['is_reward_claimed'] == true;
         }
-      } catch (_) {}
+        // 2. Case-insensitive match
+        res = await SupabaseService.client
+            .from('qr_codes')
+            .select('is_reward_claimed')
+            .ilike('bearing_id', bearingId)
+            .maybeSingle();
+        if (res != null) {
+          return res['is_reward_claimed'] == true;
+        }
+        // 3. Payload match
+        if (clean != bearingId) {
+          res = await SupabaseService.client
+              .from('qr_codes')
+              .select('is_reward_claimed')
+              .eq('payload_value', clean)
+              .maybeSingle();
+          if (res != null) {
+            return res['is_reward_claimed'] == true;
+          }
+        }
+      } catch (e) {
+        debugPrint('isBearingRewardClaimed query error: $e');
+      }
     }
     final prefs = await SharedPreferences.getInstance();
     final claimedList = prefs.getStringList(_prefKeyOfflineClaimedBearings) ?? [];
-    return claimedList.contains(bearingId);
+    return claimedList.contains(bearingId) ||
+        claimedList.contains(clean) ||
+        claimedList.contains(bearingId.toUpperCase());
   }
 
   // ===========================================================================
   // 2. USER REWARD PROFILE & WALLET BALANCE
   // ===========================================================================
   static Future<RewardProfile> fetchUserRewardProfile() async {
+    RewardProfile? onlineProfile;
     if (SupabaseService.isInitialized) {
       try {
         final dynamic res = await SupabaseService.client.rpc('get_user_reward_profile');
         if (res != null && res is Map) {
           final data = Map<String, dynamic>.from(res);
           if (data['authenticated'] == true) {
-            return RewardProfile.fromJson(data);
+            onlineProfile = RewardProfile.fromJson(data);
           }
         }
       } catch (e) {
@@ -108,7 +215,37 @@ class RewardService {
       }
     }
 
-    return await _localGetUserRewardProfile();
+    if (onlineProfile != null) {
+      // Read local fallback balance from SharedPreferences only (no redundant network settings call)
+      final localProfile = await _localGetUserRewardProfile(skipRemoteSettings: true);
+      final maxBalance = math.max(onlineProfile.currentBalancePoints, localProfile.currentBalancePoints);
+      final maxEarned = math.max(onlineProfile.totalPointsEarned, localProfile.totalPointsEarned);
+      final resolved = maxBalance > onlineProfile.currentBalancePoints
+          ? RewardProfile(
+              currentBalancePoints: maxBalance,
+              currentBalanceInr: onlineProfile.calculateInrForPoints(maxBalance),
+              pendingRedemptionPoints: onlineProfile.pendingRedemptionPoints,
+              pendingRedemptionInr: onlineProfile.pendingRedemptionInr,
+              totalPointsEarned: maxEarned,
+              totalPointsRedeemed: onlineProfile.totalPointsRedeemed,
+              pointsBaseUnit: onlineProfile.pointsBaseUnit,
+              inrPerBaseUnit: onlineProfile.inrPerBaseUnit,
+              rateMultiplier: onlineProfile.rateMultiplier,
+              rateDisplayString: onlineProfile.rateDisplayString,
+              minRedemptionPoints: onlineProfile.minRedemptionPoints,
+              minRedemptionInr: onlineProfile.minRedemptionInr,
+              isEnabled: onlineProfile.isEnabled,
+              isRewardEligible: onlineProfile.isRewardEligible,
+              termsAndConditions: onlineProfile.termsAndConditions,
+            )
+          : onlineProfile;
+      liveProfileNotifier.value = resolved;
+      return resolved;
+    }
+
+    final localProfile = await _localGetUserRewardProfile();
+    liveProfileNotifier.value = localProfile;
+    return localProfile;
   }
 
   // ===========================================================================
@@ -153,18 +290,22 @@ class RewardService {
         );
 
         if (res != null && res is Map) {
-          return Map<String, dynamic>.from(res);
+          final map = Map<String, dynamic>.from(res);
+          if (map['success'] == true) {
+            _notifyLiveRedemption(points);
+            return map;
+          }
+          // If RPC returned an explicit functional rejection (e.g. min points not met), return it
+          if (map['message'] != null && map['message'].toString().contains('threshold')) {
+            return map;
+          }
         }
       } catch (e) {
-        debugPrint('Supabase request_reward_redemption error: $e');
-        return {
-          'success': false,
-          'message': 'Failed to submit request: ${e.toString()}',
-        };
+        debugPrint('Supabase request_reward_redemption error, falling back to resilient local engine: $e');
       }
     }
 
-    return await _localSubmitRedemption(
+    final localRes = await _localSubmitRedemption(
       points: points,
       payoutMethod: payoutMethod,
       supplierName: cleanSuppName,
@@ -175,10 +316,12 @@ class RewardService {
       bankAccountHolderName: bankAccountHolderName,
       bankName: bankName,
     );
+    if (localRes['success'] == true) {
+      _notifyLiveRedemption(points);
+    }
+    return localRes;
   }
 
-  // ===========================================================================
-  // 4. USER TRANSACTIONS & REDEMPTION LISTS
   // ===========================================================================
   // 4. USER TRANSACTIONS & REDEMPTION LISTS (PAGINATED AT 10 PER PAGE)
   // ===========================================================================
@@ -186,48 +329,52 @@ class RewardService {
     int page = 0,
     int pageSize = 10,
   }) async {
+    List<RewardTransaction> onlineItems = [];
+    int onlineCount = 0;
     if (SupabaseService.isInitialized) {
       try {
         final uid = AuthController.instance.userId ?? SupabaseService.currentUserId;
         if (uid != null) {
-          // 1. Fetch exact total count
-          final countRes = await SupabaseService.client
-              .from('reward_transactions')
-              .count(CountOption.exact)
-              .eq('user_id', uid);
-
-          // 2. Query page slice (default: 10 entries first)
           final from = page * pageSize;
           final to = from + pageSize - 1;
-          final res = await SupabaseService.client
-              .from('reward_transactions')
-              .select()
-              .eq('user_id', uid)
-              .order('created_at', ascending: false)
-              .range(from, to);
+          final results = await Future.wait<dynamic>([
+            SupabaseService.client
+                .from('reward_transactions')
+                .count(CountOption.exact)
+                .eq('user_id', uid),
+            SupabaseService.client
+                .from('reward_transactions')
+                .select()
+                .eq('user_id', uid)
+                .order('created_at', ascending: false)
+                .range(from, to),
+          ]);
 
-          final items = (res as List)
+          onlineCount = results[0] as int;
+          onlineItems = (results[1] as List)
               .map((row) => RewardTransaction.fromJson(Map<String, dynamic>.from(row)))
               .toList();
-
-          return PaginatedRewardResult<RewardTransaction>(
-            items: items,
-            totalCount: countRes,
-            page: page,
-            pageSize: pageSize,
-          );
         }
       } catch (e) {
         debugPrint('Supabase fetchUserTransactionsPaginated error: $e');
       }
     }
 
-    final all = await _localGetUserTransactions();
+    if (onlineItems.isNotEmpty) {
+      return PaginatedRewardResult<RewardTransaction>(
+        items: onlineItems,
+        totalCount: onlineCount,
+        page: page,
+        pageSize: pageSize,
+      );
+    }
+
+    final localAll = await _localGetUserTransactions();
     final from = page * pageSize;
-    final items = all.skip(from).take(pageSize).toList();
+    final items = localAll.skip(from).take(pageSize).toList();
     return PaginatedRewardResult<RewardTransaction>(
       items: items,
-      totalCount: all.length,
+      totalCount: localAll.length,
       page: page,
       pageSize: pageSize,
     );
@@ -242,48 +389,52 @@ class RewardService {
     int page = 0,
     int pageSize = 10,
   }) async {
+    List<RewardRedemption> onlineItems = [];
+    int onlineCount = 0;
     if (SupabaseService.isInitialized) {
       try {
         final uid = AuthController.instance.userId ?? SupabaseService.currentUserId;
         if (uid != null) {
-          // 1. Fetch exact count
-          final countRes = await SupabaseService.client
-              .from('reward_redemptions')
-              .count(CountOption.exact)
-              .eq('user_id', uid);
-
-          // 2. Query page slice (default: 10 entries first)
           final from = page * pageSize;
           final to = from + pageSize - 1;
-          final res = await SupabaseService.client
-              .from('reward_redemptions')
-              .select()
-              .eq('user_id', uid)
-              .order('created_at', ascending: false)
-              .range(from, to);
+          final results = await Future.wait<dynamic>([
+            SupabaseService.client
+                .from('reward_redemptions')
+                .count(CountOption.exact)
+                .eq('user_id', uid),
+            SupabaseService.client
+                .from('reward_redemptions')
+                .select()
+                .eq('user_id', uid)
+                .order('created_at', ascending: false)
+                .range(from, to),
+          ]);
 
-          final items = (res as List)
+          onlineCount = results[0] as int;
+          onlineItems = (results[1] as List)
               .map((row) => RewardRedemption.fromJson(Map<String, dynamic>.from(row)))
               .toList();
-
-          return PaginatedRewardResult<RewardRedemption>(
-            items: items,
-            totalCount: countRes,
-            page: page,
-            pageSize: pageSize,
-          );
         }
       } catch (e) {
         debugPrint('Supabase fetchUserRedemptionsPaginated error: $e');
       }
     }
 
-    final all = await _localGetUserRedemptions();
+    if (onlineItems.isNotEmpty) {
+      return PaginatedRewardResult<RewardRedemption>(
+        items: onlineItems,
+        totalCount: onlineCount,
+        page: page,
+        pageSize: pageSize,
+      );
+    }
+
+    final localAll = await _localGetUserRedemptions();
     final from = page * pageSize;
-    final items = all.skip(from).take(pageSize).toList();
+    final items = localAll.skip(from).take(pageSize).toList();
     return PaginatedRewardResult<RewardRedemption>(
       items: items,
-      totalCount: all.length,
+      totalCount: localAll.length,
       page: page,
       pageSize: pageSize,
     );
@@ -307,7 +458,9 @@ class RewardService {
             .maybeSingle();
 
         if (res != null) {
-          return RewardSettings.fromJson(Map<String, dynamic>.from(res));
+          final settings = RewardSettings.fromJson(Map<String, dynamic>.from(res));
+          _cachedSettings = settings;
+          return settings;
         }
       } catch (e) {
         debugPrint('Supabase fetchRewardSettings error: $e');
@@ -318,10 +471,12 @@ class RewardService {
     final raw = prefs.getString(_prefKeyOfflineSettings);
     if (raw != null) {
       try {
-        return RewardSettings.fromJson(jsonDecode(raw));
+        final settings = RewardSettings.fromJson(jsonDecode(raw));
+        _cachedSettings = settings;
+        return settings;
       } catch (_) {}
     }
-    return const RewardSettings();
+    return _cachedSettings ?? const RewardSettings();
   }
 
   static Future<bool> updateRewardSettings({
@@ -534,12 +689,15 @@ class RewardService {
     final claimedList = prefs.getStringList(_prefKeyOfflineClaimedBearings) ?? [];
     final bearingId = _extractBearingId(rawPayload);
     final userEmail = AuthController.instance.userEmail ?? 'default_user';
+    final cleanEmail = userEmail.trim().toLowerCase();
 
     final cleanName = supplierName?.trim() ?? '';
     final cleanContact = supplierContact?.trim() ?? '';
 
     // Check if user is blocked from receiving rewards
-    final isBlocked = prefs.getBool('offline_reward_eligible_$userEmail') == false;
+    final isBlocked = !AuthController.instance.isRewardEligible ||
+        prefs.getBool('offline_reward_eligible_$cleanEmail') == false ||
+        prefs.getBool('offline_reward_eligible_$userEmail') == false;
     if (isBlocked) {
       return RewardClaimResult(
         rewardAwarded: false,
@@ -549,7 +707,7 @@ class RewardService {
       );
     }
 
-    if (claimedList.contains(bearingId)) {
+    if (claimedList.any((c) => c.toUpperCase() == bearingId.toUpperCase())) {
       return RewardClaimResult(
         rewardAwarded: false,
         alreadyClaimed: true,
@@ -579,6 +737,24 @@ class RewardService {
     await prefs.setInt('${_prefKeyOfflineWallet}balance_$userEmail', newBal);
     await prefs.setInt('${_prefKeyOfflineWallet}earned_$userEmail', totalEarned + points);
 
+    // Record local transaction ledger entry so user wallet reflects earned points
+    try {
+      final txn = {
+        'id': 'local_tx_${DateTime.now().millisecondsSinceEpoch}',
+        'bearing_id': bearingId,
+        'transaction_type': 'SCAN_CREDIT',
+        'points': points,
+        'amount_inr': inr,
+        'source_module': sourceModule,
+        'description': '1st Scan reward for bearing $bearingId',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      final rawTx = prefs.getString('${_prefKeyOfflineWallet}txns_$userEmail');
+      List<dynamic> txList = rawTx != null ? jsonDecode(rawTx) : [];
+      txList.insert(0, txn);
+      await prefs.setString('${_prefKeyOfflineWallet}txns_$userEmail', jsonEncode(txList));
+    } catch (_) {}
+
     return RewardClaimResult(
       rewardAwarded: true,
       bearingId: bearingId,
@@ -592,9 +768,25 @@ class RewardService {
     );
   }
 
-  static Future<RewardProfile> _localGetUserRewardProfile() async {
+  static Future<RewardProfile> _localGetUserRewardProfile({bool skipRemoteSettings = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    final settings = await fetchRewardSettings();
+    RewardSettings settings;
+    if (skipRemoteSettings) {
+      final raw = prefs.getString(_prefKeyOfflineSettings);
+      if (_cachedSettings != null) {
+        settings = _cachedSettings!;
+      } else if (raw != null) {
+        try {
+          settings = RewardSettings.fromJson(jsonDecode(raw));
+        } catch (_) {
+          settings = const RewardSettings();
+        }
+      } else {
+        settings = const RewardSettings();
+      }
+    } else {
+      settings = await fetchRewardSettings();
+    }
     final userEmail = AuthController.instance.userEmail ?? 'default_user';
     final isEligible = prefs.getBool('offline_reward_eligible_$userEmail') != false;
 
@@ -678,6 +870,23 @@ class RewardService {
     List<dynamic> list = raw != null ? jsonDecode(raw) : [];
     list.insert(0, newReq);
     await prefs.setString(_prefKeyOfflineRedemptions, jsonEncode(list));
+
+    // Record redemption hold in local transactions ledger
+    try {
+      final txn = {
+        'id': 'local_tx_${DateTime.now().millisecondsSinceEpoch}',
+        'transaction_type': 'REDEMPTION_HOLD',
+        'points': -points,
+        'amount_inr': -(points * mult),
+        'source_module': 'REDEMPTION',
+        'description': 'Payout request $reqNum ($payoutMethod)',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      final rawTx = prefs.getString('${_prefKeyOfflineWallet}txns_$userEmail');
+      List<dynamic> txList = rawTx != null ? jsonDecode(rawTx) : [];
+      txList.insert(0, txn);
+      await prefs.setString('${_prefKeyOfflineWallet}txns_$userEmail', jsonEncode(txList));
+    } catch (_) {}
 
     return {
       'success': true,
@@ -795,12 +1004,20 @@ class RewardService {
       if (parts.length > 1) {
         id = parts[1].split('?').first.split('&').first;
       }
+    } else if (id.contains('/verify/')) {
+      final parts = id.split('/verify/');
+      if (parts.length > 1) {
+        id = parts[1].split('?').first.split('&').first;
+      }
     } else if (id.contains('://')) {
       final uri = Uri.tryParse(id);
       if (uri != null && uri.pathSegments.isNotEmpty) {
         id = uri.pathSegments.last.split('?').first;
       }
     }
-    return id.toUpperCase().trim();
+    try {
+      id = Uri.decodeComponent(id);
+    } catch (_) {}
+    return id.trim();
   }
 }

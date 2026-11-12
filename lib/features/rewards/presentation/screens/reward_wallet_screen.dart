@@ -50,11 +50,23 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    if (RewardService.liveProfileNotifier.value != null) {
+      _profile = RewardService.liveProfileNotifier.value!;
+    }
+    RewardService.liveProfileNotifier.addListener(_onLiveProfileChanged);
     _loadData();
+  }
+
+  void _onLiveProfileChanged() {
+    final latest = RewardService.liveProfileNotifier.value;
+    if (latest != null && mounted) {
+      setState(() => _profile = latest);
+    }
   }
 
   @override
   void dispose() {
+    RewardService.liveProfileNotifier.removeListener(_onLiveProfileChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -62,9 +74,15 @@ class _RewardWalletScreenState extends State<RewardWalletScreen> with SingleTick
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final prof = await RewardService.fetchUserRewardProfile();
-      final txRes = await RewardService.fetchUserTransactionsPaginated(page: 0, pageSize: _pageSize);
-      final redRes = await RewardService.fetchUserRedemptionsPaginated(page: 0, pageSize: _pageSize);
+      final results = await Future.wait<dynamic>([
+        RewardService.fetchUserRewardProfile(),
+        RewardService.fetchUserTransactionsPaginated(page: 0, pageSize: _pageSize),
+        RewardService.fetchUserRedemptionsPaginated(page: 0, pageSize: _pageSize),
+      ]);
+
+      final prof = results[0] as RewardProfile;
+      final txRes = results[1] as PaginatedRewardResult<RewardTransaction>;
+      final redRes = results[2] as PaginatedRewardResult<RewardRedemption>;
 
       if (mounted) {
         setState(() {
