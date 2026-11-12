@@ -34,22 +34,10 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   bool _isTorchOn = false;
   bool _isProcessing = false;
   bool _cameraPermissionDenied = false;
-  bool _isFraudLocked = false;
-  FraudCheckResult? _lastFraudCheck;
   String? _lastScannedPayload;
 
   Future<void> _checkInitialFraudLock() async {
-    final locked = await AntiFraudService.isScannerLocked();
-    if (!mounted) return;
-    if (locked) {
-      final status = await AntiFraudService.getFraudLockStatus();
-      if (!mounted) return;
-      setState(() {
-        _isFraudLocked = true;
-        _lastFraudCheck = status;
-      });
-      _scannerController.stop();
-    }
+    await AntiFraudService.resetInvalidScanCount();
   }
 
   @override
@@ -78,7 +66,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       _scannerController.stop();
     } else if (state == AppLifecycleState.resumed) {
-      if (!_isProcessing && !_isFraudLocked) {
+      if (!_isProcessing) {
         _scannerController.start();
       }
     }
@@ -94,7 +82,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
   /// Handles incoming barcode detections
   Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
-    if (_isProcessing || _isFraudLocked) return;
+    if (_isProcessing) return;
 
     for (final barcode in capture.barcodes) {
       if (barcode.format != BarcodeFormat.qrCode) continue;
@@ -110,7 +98,6 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
   /// Main scan processing pipeline
   Future<void> _processScannedPayload(String payload) async {
-    if (_isFraudLocked) return;
     setState(() => _isProcessing = true);
     await _scannerController.stop();
 
@@ -118,20 +105,12 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       final result = await _bearingRepository.verifyScannedPayload(payload);
       if (!mounted) return;
 
-      // Anti-Fraud check on invalid scans
+      // Log invalid scans without locking or restricting the scanner
       if (result.status == QrVerificationStatus.qrUnknownOrInvalid) {
-        final fraudCheck = await AntiFraudService.recordInvalidScan(
+        await AntiFraudService.recordInvalidScan(
           scannedPayload: payload,
           reason: result.errorMessage ?? 'Unrecognized QR Code',
         );
-        if (mounted) {
-          setState(() {
-            _lastFraudCheck = fraudCheck;
-            if (fraudCheck.isLocked) {
-              _isFraudLocked = true;
-            }
-          });
-        }
       }
 
       if (!mounted) return;
@@ -349,49 +328,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                 const SizedBox(height: AppDimensions.spaceMd),
 
                 // Case: UNKNOWN or INVALID (Rendered in prominent RED)
-                if (result.status == QrVerificationStatus.qrUnknownOrInvalid || _lastFraudCheck?.hasWarning == true) ...[
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: AppDimensions.spaceSm),
-                    padding: const EdgeInsets.all(AppDimensions.spaceSm),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      border: Border.all(color: const Color(0xFFDC2626), width: 2.0),
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 22),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _isFraudLocked
-                                    ? 'SCANNER LOCKED — ANTI-FRAUD VIOLATION'
-                                    : 'ANTI-FRAUD WARNING (${_lastFraudCheck?.invalidCount ?? 1}/${_lastFraudCheck?.fraudLimit ?? 3} FALSE SCANS)',
-                                style: AppTypography.labelMd.copyWith(
-                                  color: const Color(0xFFDC2626),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _isFraudLocked
-                              ? 'You have reached the maximum allowed invalid QR code scans (${_lastFraudCheck?.invalidCount ?? 3}/${_lastFraudCheck?.fraudLimit ?? 3}).\n\nWARNING: You must not scan any false QR codes from now else your ID will be banned.'
-                              : 'WARNING: You must not scan any false QR codes from now else your ID will be banned.',
-                          style: AppTypography.bodySm.copyWith(
-                            color: const Color(0xFF991B1B),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                if (result.status == QrVerificationStatus.qrUnknownOrInvalid) ...[
                   _buildInfoCard(
                     title: 'INVALID QR CODE - NOT AUTHENTIC',
                     description: result.errorMessage ??
@@ -486,7 +423,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                 const SizedBox(height: AppDimensions.spaceLg),
 
                 // Mark IN / Mark OUT action buttons when applicable
-                if (result.canMarkIn && !isDecom && !_isFraudLocked) ...[
+                if (result.canMarkIn && !isDecom) ...[
                   IndustrialButton.success(
                     label: 'MARK BEARING IN & SUBMIT',
                     icon: Icons.login,
@@ -502,43 +439,16 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                   const SizedBox(height: AppDimensions.spaceSm),
                 ],
 
-                // Action: SCAN AGAIN or LOCKED CLOSE
-                if (_isFraudLocked) ...[
-                  const SizedBox(
-                    width: double.infinity,
-                    child: IndustrialButton.danger(
-                      label: 'SCANNER LOCKED (LIMIT REACHED)',
-                      icon: Icons.lock,
-                      onPressed: null,
-                    ),
+                SizedBox(
+                  width: double.infinity,
+                  child: IndustrialButton.secondary(
+                    label: 'SCAN AGAIN',
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _resumeScanning();
+                    },
                   ),
-                  const SizedBox(height: AppDimensions.spaceSm),
-                  SizedBox(
-                    width: double.infinity,
-                    child: IndustrialButton.secondary(
-                      label: 'CLOSE & RETURN TO HOME',
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        Navigator.pushNamedAndRemoveUntil(
-                          context,
-                          AppRoutes.customerHome,
-                          (route) => false,
-                        );
-                      },
-                    ),
-                  ),
-                ] else ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: IndustrialButton.secondary(
-                      label: 'SCAN AGAIN',
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _resumeScanning();
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ],
             ),
           ),
@@ -633,41 +543,38 @@ class _QrScannerScreenState extends State<QrScannerScreen>
               ),
             ),
 
-            // Camera Viewport / Fraud Lock
+            // Camera Viewport
             Expanded(
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  if (_isFraudLocked)
-                    _buildFraudLockedView()
-                  else if (_cameraPermissionDenied)
+                  if (_cameraPermissionDenied)
                     _buildPermissionDeniedView()
                   else if (kIsWeb)
                     _buildWebCameraViewport()
                   else
                     _buildNativeCameraViewport(),
 
-                  if (!_isFraudLocked) _buildIndustrialReticle(),
+                  _buildIndustrialReticle(),
 
                   // Status chip
-                  if (!_isFraudLocked)
-                    Positioned(
-                      top: 20,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          border: Border.all(color: AppColors.primary, width: 1.5),
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
-                        ),
-                        child: Text(
-                          _isProcessing
-                              ? 'VERIFYING QR — CAMERA WILL OPEN...'
-                              : 'AIM AT BEARING QR CODE',
-                          style: AppTypography.caption,
-                        ),
+                  Positioned(
+                    top: 20,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        border: Border.all(color: AppColors.primary, width: 1.5),
+                        borderRadius: BorderRadius.circular(AppDimensions.radiusMicro),
+                      ),
+                      child: Text(
+                        _isProcessing
+                            ? 'VERIFYING QR — CAMERA WILL OPEN...'
+                            : 'AIM AT BEARING QR CODE',
+                        style: AppTypography.caption,
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
@@ -684,10 +591,10 @@ class _QrScannerScreenState extends State<QrScannerScreen>
               ),
               child: Center(
                 child: IconButton(
-                  onPressed: _isFraudLocked ? null : _toggleTorch,
+                  onPressed: _toggleTorch,
                   icon: Icon(
                     _isTorchOn ? Icons.flash_on : Icons.flash_off,
-                    color: _isFraudLocked ? Colors.grey : AppColors.primary,
+                    color: AppColors.primary,
                     size: 26,
                   ),
                   tooltip: 'Toggle Torch',
@@ -695,97 +602,6 @@ class _QrScannerScreenState extends State<QrScannerScreen>
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFraudLockedView() {
-    final count = _lastFraudCheck?.invalidCount ?? 3;
-    final limit = _lastFraudCheck?.fraudLimit ?? 3;
-    return Container(
-      color: const Color(0xFF1E293B),
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
-            borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-            border: Border.all(color: const Color(0xFFDC2626), width: 2.5),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFDC2626),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.lock_rounded, size: 36, color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'SCANNER LOCKED',
-                style: TextStyle(
-                  color: Color(0xFFDC2626),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDC2626),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'LIMIT EXCEEDED: $count / $limit FALSE SCANS',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'You must not scan any false QR codes from now else your ID will be banned.',
-                style: TextStyle(
-                  color: Color(0xFF991B1B),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Anti-Fraud security policy has locked the camera scanner for this device.',
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              IndustrialButton.secondary(
-                label: 'RETURN TO DASHBOARD',
-                onPressed: () {
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    AppRoutes.customerHome,
-                    (route) => false,
-                  );
-                },
-              ),
-            ],
-          ),
         ),
       ),
     );

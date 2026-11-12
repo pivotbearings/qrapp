@@ -129,8 +129,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   bool _isTorchOn = false;
   bool _isCameraFacingBack = true;
   bool _cameraPermissionDenied = false;
-  bool _isFraudLocked = false;
-  FraudCheckResult? _lastFraudCheck;
   String? _lastScannedCode;
   final TextEditingController _manualInputController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
@@ -229,16 +227,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Future<void> _checkInitialFraudLock() async {
-    final locked = await AntiFraudService.isScannerLocked();
-    if (!mounted) return;
-    if (locked) {
-      final status = await AntiFraudService.getFraudLockStatus();
-      if (!mounted) return;
-      setState(() {
-        _isFraudLocked = true;
-        _lastFraudCheck = status;
-      });
-    }
+    await AntiFraudService.resetInvalidScanCount();
   }
 
   void _initScanner() {
@@ -257,9 +246,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       _scannerController?.stop();
     } else if (state == AppLifecycleState.resumed && _currentStep == TrackViewStep.scanner) {
-      if (!_isFraudLocked) {
-        _scannerController?.start();
-      }
+      _scannerController?.start();
     }
   }
 
@@ -274,22 +261,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Future<void> _openScanner() async {
-    final locked = await AntiFraudService.isScannerLocked();
-    if (locked) {
-      final status = await AntiFraudService.getFraudLockStatus();
-      if (mounted) {
-        setState(() {
-          _isFraudLocked = true;
-          _lastFraudCheck = status;
-        });
-        AppSnackBar.showError(
-          context,
-          'Scanner locked: You must not scan any false QR codes from now else your ID will be banned.',
-        );
-      }
-      return;
-    }
-
     _initScanner();
     setState(() {
       _currentStep = TrackViewStep.scanner;
@@ -306,7 +277,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
-    if (_currentStep != TrackViewStep.scanner || _isFraudLocked) return;
+    if (_currentStep != TrackViewStep.scanner) return;
 
     for (final barcode in capture.barcodes) {
       if (barcode.format != BarcodeFormat.qrCode) continue;
@@ -321,14 +292,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   }
 
   Future<void> _executeTracking(String payload) async {
-    if (_isFraudLocked) {
-      AppSnackBar.showError(
-        context,
-        'Scanner locked: You must not scan any false QR codes from now else your ID will be banned.',
-      );
-      return;
-    }
-
     setState(() {
       _currentStep = TrackViewStep.processing;
     });
@@ -341,20 +304,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         notes: enteredNotes.isNotEmpty ? enteredNotes : null,
       );
       if (mounted) {
-        if (result.isInvalid) {
-          final fraudCheck = await AntiFraudService.recordInvalidScan(
-            scannedPayload: payload,
-            reason: result.message ?? 'Unregistered bearing QR code',
-          );
-          if (mounted) {
-            setState(() {
-              _lastFraudCheck = fraudCheck;
-              if (fraudCheck.isLocked) {
-                _isFraudLocked = true;
-              }
-            });
-          }
-        }
         setState(() {
           _trackResult = result;
           _currentStep = TrackViewStep.result;
@@ -365,16 +314,8 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
         _loadProductOutData(force: true);
       }
     } catch (e) {
-      final fraudCheck = await AntiFraudService.recordInvalidScan(
-        scannedPayload: payload,
-        reason: e.toString(),
-      );
       if (mounted) {
         setState(() {
-          _lastFraudCheck = fraudCheck;
-          if (fraudCheck.isLocked) {
-            _isFraudLocked = true;
-          }
           _trackResult = BearingTrackResult.invalid(
             rawPayload: payload,
             message: 'Tracking error: ${e.toString()}',
@@ -1548,99 +1489,6 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
   // 2. SCANNER VIEW: Instant QR Scanner Viewport
   // ===========================================================================
   Widget _buildScannerView(BoxConstraints constraints) {
-    if (_isFraudLocked) {
-      final count = _lastFraudCheck?.invalidCount ?? 3;
-      final limit = _lastFraudCheck?.fraudLimit ?? 3;
-      return Container(
-        color: const Color(0xFF1E293B),
-        padding: const EdgeInsets.all(24.0),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-              border: Border.all(color: const Color(0xFFDC2626), width: 2.5),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFDC2626),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.lock_rounded, size: 36, color: Colors.white),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'SCANNER LOCKED',
-                  style: TextStyle(
-                    color: Color(0xFFDC2626),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'LIMIT EXCEEDED: $count / $limit FALSE SCANS',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'You must not scan any false QR codes from now else your ID will be banned.',
-                  style: TextStyle(
-                    color: Color(0xFF991B1B),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    height: 1.4,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Anti-Fraud security policy has disabled the camera scanner for this device.',
-                  style: TextStyle(
-                    color: Colors.black87,
-                    fontSize: 12,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(50),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  ),
-                  onPressed: _closeScanner,
-                  child: const Text('Back to Tracking Home'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     final scanBoxSize = (constraints.maxWidth * 0.72).clamp(200.0, 280.0);
 
     return Column(
@@ -2875,69 +2723,7 @@ class _TrackBearingScreenState extends State<TrackBearingScreen>
 
           const SizedBox(height: AppDimensions.spaceMd),
 
-          // Critical Anti-Fraud Lock / Ban Warning Banner
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-              border: Border.all(color: const Color(0xFFDC2626), width: 2.0),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 24),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _isFraudLocked
-                            ? 'SCANNER LOCKED — ANTI-FRAUD VIOLATION'
-                            : 'SECURITY WARNING (${_lastFraudCheck?.invalidCount ?? 1}/${_lastFraudCheck?.fraudLimit ?? 3} FALSE SCANS)',
-                        style: AppTypography.labelMd.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: const Color(0xFFDC2626),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _isFraudLocked
-                      ? 'You have reached the limit of ${_lastFraudCheck?.fraudLimit ?? 3} invalid QR code scans.\n\nWARNING: You must not scan any false QR codes from now else your ID will be banned.'
-                      : 'WARNING: You must not scan any false QR codes from now else your ID will be banned.',
-                  style: AppTypography.bodySm.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF991B1B),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: AppDimensions.spaceMd),
-
-          if (_isFraudLocked)
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(50),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              onPressed: null,
-              icon: const Icon(Icons.lock, size: 20),
-              label: const Text(
-                'SCANNER LOCKED (LIMIT REACHED)',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-            )
-          else
-            ElevatedButton.icon(
+          ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.background,

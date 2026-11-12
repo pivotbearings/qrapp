@@ -216,20 +216,8 @@ begin
     );
   end if;
 
-  -- Daily velocity check
-  select count(*) into v_scans_today
-  from public.reward_transactions
-  where user_id = v_user_id
-    and transaction_type in ('FIRST_SCAN_REWARD', 'SCAN_CREDIT')
-    and created_at >= v_today_start;
-
-  if v_scans_today >= coalesce(v_settings.daily_max_scans_per_user, 50) then
-    return jsonb_build_object(
-      'reward_awarded', false,
-      'error_code', 'DAILY_LIMIT_REACHED',
-      'message', 'Daily scan reward limit reached (' || coalesce(v_settings.daily_max_scans_per_user, 50) || ' scans/day).'
-    );
-  end if;
+  -- Daily scan limit removed: unlimited scans permitted
+  v_scans_today := 0;
 
   -- Find and lock QR code row with full payload and serial resilience
   select * into v_qr

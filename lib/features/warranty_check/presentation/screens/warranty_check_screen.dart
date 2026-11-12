@@ -414,17 +414,6 @@ Pivot Bearings India''';
   }
 
   Future<void> _openQrScanner() async {
-    final locked = await AntiFraudService.isScannerLocked();
-    if (locked) {
-      if (mounted) {
-        AppSnackBar.showError(
-          context,
-          'Scanner locked: You must not scan any false QR codes from now else your ID will be banned.',
-        );
-      }
-      return;
-    }
-
     if (!mounted) return;
     showModalBottomSheet(
       context: context,

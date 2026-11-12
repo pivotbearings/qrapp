@@ -154,7 +154,7 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
         if (ok) {
           AppSnackBar.showSuccess(
             context,
-            'SETTINGS SAVED: Anti-Fraud Limit set to $dailyCap false scans. 10 Pts = ₹${inrPer10.toStringAsFixed(2)} synchronized!',
+            'SETTINGS SAVED: Unlimited scanning enabled. 10 Pts = ₹${inrPer10.toStringAsFixed(2)} synchronized!',
           );
           _loadAllData();
         } else {
@@ -1109,42 +1109,32 @@ class _AdminRewardsViewState extends State<AdminRewardsView> with SingleTickerPr
 
                     const SizedBox(height: 12),
 
-                    // Daily Anti-Fraud Scan Limit
-                    _buildFieldLabel('Anti-Fraud False QR Scan Limit (per user):'),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        'Maximum false/invalid QR code scans allowed before locking the user scanner and issuing account ban warnings.',
-                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                    // Unlimited Scanning Notice
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.2),
+                        ),
                       ),
-                    ),
-                    TextFormField(
-                      controller: _dailyLimitCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: _inputDeco('e.g. 3 or 50 scans'),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: () async {
-                          await AntiFraudService.resetInvalidScanCount();
-                          if (mounted) {
-                            AppSnackBar.showSuccess(
-                              context,
-                              'Test Anti-Fraud Counter reset to 0 for current user.',
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
-                        label: const Text(
-                          'Reset Test Fraud Scan Counter to 0',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary),
-                        ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.all_inclusive, size: 18, color: AppColors.primary),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Unlimited QR Scanning Enabled: No daily or anti-fraud scan limits are enforced.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
