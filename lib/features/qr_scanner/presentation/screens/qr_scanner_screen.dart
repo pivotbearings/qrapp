@@ -15,6 +15,7 @@ import '../../../bearing_verification/domain/models/qr_verification_result.dart'
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/widgets/industrial_text_field.dart';
 import '../../../../core/services/anti_fraud_service.dart';
+import '../../../rewards/data/services/reward_service.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -145,6 +146,11 @@ class _QrScannerScreenState extends State<QrScannerScreen>
           context,
           'Bearing verified authentic. Account is in standard mode without promotional reward points.',
         );
+      } else if (result.rewardClaim != null &&
+          !result.rewardClaim!.rewardAwarded &&
+          !result.rewardClaim!.alreadyClaimed &&
+          result.rewardClaim!.message.isNotEmpty) {
+        AppSnackBar.showInfo(context, result.rewardClaim!.message);
       }
 
       final cleanId = (result.bearingId ?? payload).trim();
@@ -214,6 +220,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   }
 
   void _resumeScanning() {
+    RewardService.fetchUserRewardProfile();
     if (mounted) {
       setState(() {
         _isProcessing = false;

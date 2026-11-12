@@ -10,12 +10,12 @@ import '../../../../core/widgets/industrial_button.dart';
 import '../../../../core/widgets/industrial_card.dart';
 import '../../../../core/widgets/industrial_status_badge.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
-import '../../../../core/widgets/reward_icon.dart';
 
 import '../../data/models/bearing_model.dart';
 import '../../data/repositories/bearing_repository.dart';
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 import '../../../rewards/data/services/reward_service.dart';
+import '../../../rewards/presentation/widgets/scan_reward_banner.dart';
 
 class InConfirmationScreen extends StatefulWidget {
   final String bearingId;
@@ -82,14 +82,19 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
     }
 
     RewardClaimResult? rewardClaim;
+    var newlyClaimedHere = false;
     if (!isOut && AuthController.instance.isRewardEligible) {
       rewardClaim = RewardService.getRecentClaimForBearing(cleanId);
+      if (rewardClaim == null && b?.id.isNotEmpty == true) {
+        rewardClaim = RewardService.getRecentClaimForBearing(b!.id);
+      }
       if (rewardClaim == null) {
         try {
           rewardClaim = await RewardService.claimBearingScanReward(
             rawPayloadOrId: b?.id.isNotEmpty == true ? b!.id : cleanId,
             sourceModule: 'WARRANTY_SCAN',
           );
+          newlyClaimedHere = rewardClaim.rewardAwarded;
         } catch (e) {
           debugPrint('InConfirmation reward claim notice: $e');
         }
@@ -103,6 +108,13 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
         _rewardClaim = rewardClaim;
         _isLoading = false;
       });
+      if (newlyClaimedHere && rewardClaim != null) {
+        AppSnackBar.showSuccess(
+          context,
+          '🎉 1st Scan Reward: +${rewardClaim.pointsEarned} Points Credited!',
+        );
+        RewardService.fetchUserRewardProfile();
+      }
     }
   }
 
@@ -379,14 +391,11 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
                           ),
                         ),
 
-                        if (AuthController.instance.isRewardEligible && _rewardClaim != null) ...[
-                          if (_rewardClaim!.rewardAwarded) ...[
-                            const SizedBox(height: AppDimensions.spaceSm),
-                            _buildRewardClaimedBanner(_rewardClaim!),
-                          ] else if (_rewardClaim!.alreadyClaimed) ...[
-                            const SizedBox(height: AppDimensions.spaceSm),
-                            _buildRewardAlreadyClaimedBanner(),
-                          ],
+                        if (AuthController.instance.isRewardEligible &&
+                            _rewardClaim != null &&
+                            (_rewardClaim!.rewardAwarded || _rewardClaim!.alreadyClaimed)) ...[
+                          const SizedBox(height: AppDimensions.spaceSm),
+                          ScanRewardBanner(claim: _rewardClaim!),
                         ],
 
                         const SizedBox(height: AppDimensions.spaceMd),
@@ -610,93 +619,6 @@ class _InConfirmationScreenState extends State<InConfirmationScreen> {
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildRewardClaimedBanner(RewardClaimResult claim) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        border: Border.all(color: AppColors.primary, width: 1.8),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: RewardIcon(color: Colors.white, size: 22),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '1ST SCAN REWARD CLAIMED!',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 11,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '+${claim.pointsEarned} Points Credited!',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                Text(
-                  'Points added to your Pivot Reward Wallet.',
-                  style: TextStyle(
-                    color: AppColors.primary.withValues(alpha: 0.75),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRewardAlreadyClaimedBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusDefault),
-        border: Border.all(color: Colors.black12, width: 1.2),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: AppColors.primary.withValues(alpha: 0.7), size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'First-scan reward points for this bearing have already been claimed.',
-              style: TextStyle(
-                color: AppColors.primary.withValues(alpha: 0.85),
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

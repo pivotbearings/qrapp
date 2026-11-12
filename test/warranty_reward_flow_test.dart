@@ -52,7 +52,7 @@ void main() {
       );
 
       final repo = BearingRepositoryImpl();
-      final verif = await repo.verifyScannedPayload('https://pivotbearingsindia.com/pbi/g%23PCbs%5DHVuQj');
+      final verif = await repo.verifyScannedPayload('https://pivotbearingsindia.com/pbi/g%23PCbs%5DHVuQj/?ref=1#frag');
 
       expect(verif.status, QrVerificationStatus.validNotActivated);
       expect(verif.rewardClaim?.rewardAwarded, true);
@@ -73,6 +73,32 @@ void main() {
       );
       expect(duplicateClaim.rewardAwarded, false);
       expect(duplicateClaim.alreadyClaimed, true);
+    });
+
+    test('Warranty scan works for uncached seed & currentlyIn bearings and awards points once', () async {
+      final repo = BearingRepositoryImpl();
+      final seedVerif = await repo.verifyScannedPayload('https://pivotbearings.in/verify/PB-9402-XJ/');
+      expect(seedVerif.status, QrVerificationStatus.validNotActivated);
+      expect(seedVerif.rewardClaim?.rewardAwarded, true);
+      final afterSeedBalance = RewardService.liveProfileNotifier.value?.currentBalancePoints ?? 0;
+      expect(afterSeedBalance, greaterThan(0));
+
+      BearingRepositoryImpl.registerInMemoryBearing(
+        BearingModel(
+          id: 'PB-8812-KR',
+          batchCode: 'BATCH-WARR-IN',
+          modelNumber: 'B1',
+          warrantyDurationMonths: 12,
+          state: BearingLifecycleState.currentlyIn,
+          firstInDate: DateTime.now().subtract(const Duration(days: 5)),
+        ),
+      );
+
+      final inVerif = await repo.verifyScannedPayload('PB-8812-KR');
+      expect(inVerif.status, QrVerificationStatus.validWarrantyActive);
+      expect(inVerif.rewardClaim?.rewardAwarded, true);
+      expect(RewardService.liveProfileNotifier.value?.currentBalancePoints, greaterThan(afterSeedBalance));
+      expect(RewardService.getRecentClaimForBearing('PB-8812-KR')?.rewardAwarded, true);
     });
 
     test('Invalid QR and Decommissioned bearings never award points', () async {

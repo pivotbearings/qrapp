@@ -788,7 +788,10 @@ class RewardService {
       settings = await fetchRewardSettings();
     }
     final userEmail = AuthController.instance.userEmail ?? 'default_user';
-    final isEligible = prefs.getBool('offline_reward_eligible_$userEmail') != false;
+    final cleanEmail = userEmail.trim().toLowerCase();
+    final isEligible = (prefs.getBool('offline_reward_eligible_$cleanEmail') ??
+            prefs.getBool('offline_reward_eligible_$userEmail')) !=
+        false;
 
     final balance = prefs.getInt('${_prefKeyOfflineWallet}balance_$userEmail') ?? 0;
     final pending = prefs.getInt('${_prefKeyOfflineWallet}pending_$userEmail') ?? 0;
@@ -1002,19 +1005,23 @@ class RewardService {
     if (id.contains('/pbi/')) {
       final parts = id.split('/pbi/');
       if (parts.length > 1) {
-        id = parts[1].split('?').first.split('&').first;
+        id = parts[1].split('?').first.split('&').first.split('#').first;
       }
     } else if (id.contains('/verify/')) {
       final parts = id.split('/verify/');
       if (parts.length > 1) {
-        id = parts[1].split('?').first.split('&').first;
+        id = parts[1].split('?').first.split('&').first.split('#').first;
       }
     } else if (id.contains('://')) {
       final uri = Uri.tryParse(id);
       if (uri != null && uri.pathSegments.isNotEmpty) {
-        id = uri.pathSegments.last.split('?').first;
+        final nonEmpty = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+        if (nonEmpty.isNotEmpty) {
+          id = nonEmpty.last.split('?').first.split('&').first.split('#').first;
+        }
       }
     }
+    id = id.replaceAll(RegExp(r'/+$'), '');
     try {
       id = Uri.decodeComponent(id);
     } catch (_) {}

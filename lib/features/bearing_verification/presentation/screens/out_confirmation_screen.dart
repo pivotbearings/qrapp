@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/auth/auth_controller.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -16,6 +17,8 @@ import '../../data/repositories/bearing_repository.dart';
 import '../../../qr_generation/data/repositories/qr_management_repository.dart';
 import '../../../item_master/data/repositories/item_master_repository.dart';
 import '../../domain/services/warranty_calculator.dart';
+import '../../../rewards/data/services/reward_service.dart';
+import '../../../rewards/presentation/widgets/scan_reward_banner.dart';
 
 class OutConfirmationScreen extends StatefulWidget {
   final String bearingId;
@@ -30,6 +33,7 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
   BearingModel? _bearing;
   DateTime? _resolvedInDate;
   bool _isProcessing = false;
+  RewardClaimResult? _rewardClaim;
   Timer? _liveTicker;
   final TextEditingController _outNotesController = TextEditingController();
 
@@ -82,11 +86,39 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
       }
     }
 
+    RewardClaimResult? rewardClaim;
+    var newlyClaimedHere = false;
+    if (b?.state != BearingLifecycleState.currentlyOut && AuthController.instance.isRewardEligible) {
+      rewardClaim = RewardService.getRecentClaimForBearing(cleanId);
+      if (rewardClaim == null && b?.id.isNotEmpty == true) {
+        rewardClaim = RewardService.getRecentClaimForBearing(b!.id);
+      }
+      if (rewardClaim == null) {
+        try {
+          rewardClaim = await RewardService.claimBearingScanReward(
+            rawPayloadOrId: b?.id.isNotEmpty == true ? b!.id : cleanId,
+            sourceModule: 'WARRANTY_SCAN',
+          );
+          newlyClaimedHere = rewardClaim.rewardAwarded;
+        } catch (e) {
+          debugPrint('OutConfirmation reward claim notice: $e');
+        }
+      }
+    }
+
     if (mounted) {
       setState(() {
         _bearing = b;
         _resolvedInDate = inDt;
+        _rewardClaim = rewardClaim;
       });
+      if (newlyClaimedHere && rewardClaim != null) {
+        AppSnackBar.showSuccess(
+          context,
+          '🎉 1st Scan Reward: +${rewardClaim.pointsEarned} Points Credited!',
+        );
+        RewardService.fetchUserRewardProfile();
+      }
     }
   }
 
@@ -256,6 +288,13 @@ class _OutConfirmationScreenState extends State<OutConfirmationScreen> {
               ),
 
               const SizedBox(height: AppDimensions.spaceMd),
+
+              if (AuthController.instance.isRewardEligible &&
+                  _rewardClaim != null &&
+                  (_rewardClaim!.rewardAwarded || _rewardClaim!.alreadyClaimed)) ...[
+                ScanRewardBanner(claim: _rewardClaim!),
+                const SizedBox(height: AppDimensions.spaceMd),
+              ],
 
               // Operational Protocol Notice Box
               IndustrialCard(

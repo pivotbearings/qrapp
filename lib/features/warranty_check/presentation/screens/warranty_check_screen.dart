@@ -1500,7 +1500,10 @@ Pivot Bearings India''';
                     ),
                     onPressed: () {
                       Navigator.pop(ctx);
-                      Navigator.pushNamed(context, AppRoutes.qrScanner);
+                      Navigator.pushNamed(context, AppRoutes.qrScanner).then((_) {
+                        _loadUserBearings();
+                        RewardService.fetchUserRewardProfile();
+                      });
                     },
                     icon: const Icon(Icons.qr_code_scanner, size: 18),
                     label: const Text(
